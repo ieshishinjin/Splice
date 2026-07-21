@@ -319,7 +319,13 @@ public class SpliceCli implements Callable<Integer> {
     static class SpliceBanner {
         static void print() {
             System.out.println();
-            System.out.println("  Splice v1.0.0  —  Minecraft Mod Migration Tool");
+            System.out.println("   _____       ___         ");
+            System.out.println("  / ___/____  / (_)_______ ");
+            System.out.println("  \\__ \\/ __ \\/ / / ___/ _ \\");
+            System.out.println(" ___/ / /_/ / / / /__/  __/");
+            System.out.println("/____/ .___/_/_/\\___/\\___/ ");
+            System.out.println("    /_/                    ");
+            System.out.println("  Minecraft Mod Migration Tool  v1.0.0");
             System.out.println();
         }
     }
