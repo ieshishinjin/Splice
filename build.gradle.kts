@@ -70,6 +70,10 @@ tasks.withType<Jar> {
     }
 }
 
+tasks.named("build") {
+    dependsOn("shadowJar")
+}
+
 // Native image support (GraalVM) for faster startup
 tasks.register("generateGraalReflectConfig") {
     doLast {
