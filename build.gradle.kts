@@ -39,9 +39,6 @@ dependencies {
     // JSON parsing
     implementation("com.google.code.gson:gson:2.11.0")
 
-    // TOML parsing for mods.toml
-    implementation("net.minecrell:toml4j:0.7.2")
-
     // Logging
     implementation("org.slf4j:slf4j-api:2.0.16")
     implementation("ch.qos.logback:logback-classic:1.5.13")
