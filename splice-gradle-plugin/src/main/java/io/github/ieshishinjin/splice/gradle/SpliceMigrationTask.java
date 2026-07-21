@@ -46,13 +46,11 @@ public abstract class SpliceMigrationTask extends DefaultTask {
     @TaskAction
     public void migrate() {
         // Resolve the Splice CLI fat jar from the root project
-        File spliceJar = getProject().getRootProject()
-                .getLayout().getBuildDirectory()
-                .file("libs/Splice-1.0.0-all.jar")
-                .getAsFile()
-                .getOrNull();
+        File spliceJar = new File(getProject().getRootProject()
+                .getLayout().getBuildDirectory().getAsFile().get(),
+                "libs/Splice-1.0.0-all.jar");
 
-        if (spliceJar == null || !spliceJar.exists()) {
+        if (!spliceJar.exists()) {
             throw new RuntimeException("Splice fat JAR not found. Run `./gradlew :shadowJar` " +
                     "from the root project first, or use the standalone CLI jar.");
         }
