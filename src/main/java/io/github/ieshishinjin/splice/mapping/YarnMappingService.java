@@ -59,7 +59,7 @@ public class YarnMappingService implements MappingService {
             }
 
             for (Path tinyFile : tinyFiles) {
-                parseTinyFile(tinyFile, entries);
+                parseTinyStatic(tinyFile, entries);
                 LOG.info("Loaded {} entries from {}",
                         countEntries(entries, tinyFile), tinyFile);
             }
@@ -101,15 +101,12 @@ public class YarnMappingService implements MappingService {
         return results;
     }
 
+    // ============ Public static parser (for reuse by local mapping service) ============
+
     /**
      * Parse a tiny v2 mapping file.
-     *
-     * Header: tiny\t2\t<namesCount>\t<namespace1>\t<namespace2>...
-     * Classes:   c\t<intermediary>\t<named>
-     * Methods:   m\t<intermediary>\t<desc>\t<named>
-     * Fields:    f\t<intermediary>\t<field>\t<named>
      */
-    private void parseTinyFile(Path tinyFile, List<MappingEntry> entries) {
+    public static void parseTinyStatic(Path tinyFile, List<MappingEntry> entries) {
         try (var lines = Files.lines(tinyFile)) {
             // Read header first
             String header = lines.findFirst().orElse("");
@@ -213,7 +210,7 @@ public class YarnMappingService implements MappingService {
         }
     }
 
-    private String[] tabSplit(String line) {
+    private static String[] tabSplit(String line) {
         return line.split("\t", -1);
     }
 

@@ -39,6 +39,9 @@ dependencies {
     // JSON parsing
     implementation("com.google.code.gson:gson:2.11.0")
 
+    // JavaParser for AST-based source transformation
+    implementation("com.github.javaparser:javaparser-symbol-solver-core:3.26.2")
+
     // Logging
     implementation("org.slf4j:slf4j-api:2.0.16")
     implementation("ch.qos.logback:logback-classic:1.5.13")

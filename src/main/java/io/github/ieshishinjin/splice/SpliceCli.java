@@ -1,6 +1,7 @@
 package io.github.ieshishinjin.splice;
 
 import io.github.ieshishinjin.splice.mapping.*;
+import io.github.ieshishinjin.splice.mapping.local.LocalMappingService;
 import io.github.ieshishinjin.splice.model.*;
 import io.github.ieshishinjin.splice.transformer.TransformationEngine;
 import org.slf4j.Logger;
@@ -75,6 +76,10 @@ public class SpliceCli implements Callable<Integer> {
             description = "Mappings cache directory (default: ~/.splice/mappings)")
     private Path cacheDir;
 
+    @Option(names = {"-m", "--mappings-dir"},
+            description = "Local mappings directory (offline: point to dir with CSV/SRG/TSRG/tiny files)")
+    private Path mappingsDir;
+
     @Option(names = {"--verbose", "-v"},
             description = "Enable verbose logging")
     private boolean verbose;
@@ -136,17 +141,40 @@ public class SpliceCli implements Callable<Integer> {
 
         LOG.info("Configuration: {}", config);
 
-        // 3. Load mappings
-        MappingDownloader downloader = new MappingDownloader();
-        MappingService mappingService = createMappingService(loaderType, downloader);
+        // 3. Load mappings (local or remote)
+        List<MappingEntry> sourceMappings;
+        List<MappingEntry> targetMappings;
 
-        LOG.info("Loading {} mappings for {}...", mappingService.getProviderName(), sourceVersion);
-        List<MappingEntry> sourceMappings = mappingService.loadMappings(srcVersion, config.getCacheDir());
-        LOG.info("Loaded {} entries for {}", sourceMappings.size(), sourceVersion);
+        if (mappingsDir != null) {
+            // Offline mode: load from local directory
+            if (!Files.isDirectory(mappingsDir)) {
+                LOG.error("Mappings directory not found: {}", mappingsDir);
+                System.exit(1);
+            }
+            MappingType mt = MappingType.fromLoader(loaderType);
+            LocalMappingService localService = new LocalMappingService(mappingsDir, srcVersion, tgtVersion, mt);
 
-        LOG.info("Loading {} mappings for {}...", mappingService.getProviderName(), targetVersion);
-        List<MappingEntry> targetMappings = mappingService.loadMappings(tgtVersion, config.getCacheDir());
-        LOG.info("Loaded {} entries for {}", targetMappings.size(), targetVersion);
+            LOG.info("Loading local mappings from: {} (source={}, target={})",
+                    mappingsDir, srcVersion, tgtVersion);
+
+            sourceMappings = localService.loadFromDirectory(localService.getSourceDir());
+            targetMappings = localService.loadFromDirectory(localService.getTargetDir());
+
+            LOG.info("Loaded {} source + {} target entries from local files",
+                    sourceMappings.size(), targetMappings.size());
+        } else {
+            // Online mode: download from official sources
+            MappingDownloader downloader = new MappingDownloader();
+            MappingService mappingService = createMappingService(loaderType, downloader);
+
+            LOG.info("Loading {} mappings for {}...", mappingService.getProviderName(), sourceVersion);
+            sourceMappings = mappingService.loadMappings(srcVersion, config.getCacheDir());
+            LOG.info("Loaded {} entries for {}", sourceMappings.size(), sourceVersion);
+
+            LOG.info("Loading {} mappings for {}...", mappingService.getProviderName(), targetVersion);
+            targetMappings = mappingService.loadMappings(tgtVersion, config.getCacheDir());
+            LOG.info("Loaded {} entries for {}", targetMappings.size(), targetVersion);
+        }
 
         // 4. Compute diff
         MappingDiffEngine diffEngine = new MappingDiffEngine();

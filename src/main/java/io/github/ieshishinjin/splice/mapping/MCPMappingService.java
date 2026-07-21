@@ -96,7 +96,15 @@ public class MCPMappingService implements MappingService {
         }
     }
 
-    private void parseCSV(Path csvFile, MappingEntry.MappingType type, List<MappingEntry> entries) {
+    // ============ Public static parsers (for reuse by local mapping service) ============
+
+    /**
+     * Parse a MCP CSV file (methods.csv or fields.csv).
+     * @param csvFile the CSV file
+     * @param type the mapping type (METHOD or FIELD)
+     * @param entries destination list
+     */
+    public static void parseCSVStatic(Path csvFile, MappingEntry.MappingType type, List<MappingEntry> entries) {
         try (var lines = Files.lines(csvFile)) {
             lines.skip(1) // skip header
                     .filter(line -> !line.isBlank())
@@ -106,10 +114,8 @@ public class MCPMappingService implements MappingService {
                             String searge = parts[0].trim();
                             String name = parts[1].trim();
                             String side = parts.length >= 3 ? parts[2].trim() : null;
-
                             if (!searge.isEmpty() && !name.isEmpty()) {
-                                entries.add(new MappingEntry(
-                                        type, searge, name, null, null, side));
+                                entries.add(new MappingEntry(type, searge, name, null, null, side));
                             }
                         }
                     });
@@ -119,123 +125,94 @@ public class MCPMappingService implements MappingService {
     }
 
     /**
-     * Parse SRG file format:
-     * CL: <obfuscated> <intermediate>
-     * MD: <obfuscated> <obf_desc> <intermediate> <int_desc>
-     * FD: <obfuscated> <intermediate>
+     * Parse an SRG file.
      */
-    private void parseSRG(Path srgFile, List<MappingEntry> entries) {
+    public static void parseSRGStatic(Path srgFile, List<MappingEntry> entries) {
         try (var lines = Files.lines(srgFile)) {
             lines.forEach(line -> {
                 if (line.isBlank() || line.startsWith("#")) return;
-
                 String[] parts = line.split("\\s+");
                 if (parts.length < 3) return;
-
                 switch (parts[0]) {
                     case "CL:" -> {
-                        if (parts.length >= 3) {
-                            entries.add(new MappingEntry(
-                                    MappingEntry.MappingType.CLASS,
-                                    parts[1], parts[2], null, null, null));
-                        }
+                        if (parts.length >= 3) entries.add(new MappingEntry(
+                                MappingEntry.MappingType.CLASS, parts[1], parts[2], null, null, null));
                     }
                     case "MD:" -> {
-                        if (parts.length >= 5) {
-                            entries.add(new MappingEntry(
-                                    MappingEntry.MappingType.METHOD,
-                                    parts[3], parts[4], null, parts[2], null));
-                        }
+                        if (parts.length >= 5) entries.add(new MappingEntry(
+                                MappingEntry.MappingType.METHOD, parts[3], parts[4], null, parts[2], null));
                     }
                     case "FD:" -> {
-                        if (parts.length >= 3) {
-                            entries.add(new MappingEntry(
-                                    MappingEntry.MappingType.FIELD,
-                                    parts[1], parts[2], null, null, null));
-                        }
+                        if (parts.length >= 3) entries.add(new MappingEntry(
+                                MappingEntry.MappingType.FIELD, parts[1], parts[2], null, null, null));
                     }
                 }
             });
         } catch (IOException e) {
-            LOG.warn("Failed to parse SRG file: {}", srgFile, e);
+            LOG.warn("Failed to parse SRG: {}", srgFile, e);
+        }
+    }
+
+    /**
+     * Parse a TSRG file.
+     */
+    public static void parseTSRGStatic(Path tsrgFile, List<MappingEntry> entries) {
+        try (var lines = Files.lines(tsrgFile)) {
+            String currentClass = null, currentDeobfClass = null;
+            for (String line : (Iterable<String>) lines::iterator) {
+                if (line.isBlank() || line.startsWith("#")) continue;
+                if (line.startsWith("tsrg")) continue;
+                if (!line.startsWith("\t")) {
+                    String[] parts = line.trim().split("\\s+");
+                    if (parts.length >= 2) {
+                        currentClass = parts[0];
+                        currentDeobfClass = parts[1];
+                        entries.add(new MappingEntry(MappingEntry.MappingType.CLASS, currentClass, currentDeobfClass, null, null, null));
+                    }
+                } else if (currentClass != null) {
+                    String trimmed = line.trim();
+                    String[] parts = trimmed.split("\\s+");
+                    if (parts.length == 2) {
+                        entries.add(new MappingEntry(MappingEntry.MappingType.FIELD, parts[0], parts[1], currentDeobfClass, null, null));
+                    } else if (parts.length >= 3) {
+                        entries.add(new MappingEntry(MappingEntry.MappingType.METHOD, parts[0], parts[1], currentDeobfClass, parts[2], null));
+                    }
+                }
+            }
+        } catch (IOException e) {
+            LOG.warn("Failed to parse TSRG: {}", tsrgFile, e);
         }
     }
 
     /**
      * Simple CSV line parser (handles quoted fields).
      */
-    private String[] parseCSVLine(String line) {
+    public static String[] parseCSVLine(String line) {
         List<String> fields = new ArrayList<>();
         boolean inQuotes = false;
         StringBuilder current = new StringBuilder();
-
         for (int i = 0; i < line.length(); i++) {
             char c = line.charAt(i);
-            if (c == '"') {
-                inQuotes = !inQuotes;
-            } else if (c == ',' && !inQuotes) {
-                fields.add(current.toString().trim());
-                current = new StringBuilder();
-            } else {
-                current.append(c);
-            }
+            if (c == '"') { inQuotes = !inQuotes; }
+            else if (c == ',' && !inQuotes) { fields.add(current.toString().trim()); current = new StringBuilder(); }
+            else { current.append(c); }
         }
         fields.add(current.toString().trim());
         return fields.toArray(new String[0]);
     }
 
-    /**
-     * Parse TSRG (Tiny SRG) file format used by modern Forge MCPConfig.
-     * <p>
-     * Format:
-     *   <obf_class> <deobf_class>
-     *     <obf_field> <deobf_field>
-     *     <obf_method> <deobf_method> <descriptor>
-     * <p>
-     * Indented lines belong to the most recently declared class.
-     */
-    private void parseTSRG(Path tsrgFile, List<MappingEntry> entries) {
-        try (var lines = Files.lines(tsrgFile)) {
-            String currentClass = null;
-            String currentDeobfClass = null;
+    // ============ Instance methods that delegate to static ============
 
-            for (String line : (Iterable<String>) lines::iterator) {
-                if (line.isBlank() || line.startsWith("#")) continue;
-                if (line.startsWith("tsrg")) continue; // header
+    public void parseCSV(Path csvFile, MappingEntry.MappingType type, List<MappingEntry> entries) {
+        parseCSVStatic(csvFile, type, entries);
+    }
 
-                if (!line.startsWith("\t")) {
-                    // Class line: <obf> <deobf>
-                    String[] parts = line.trim().split("\\s+");
-                    if (parts.length >= 2) {
-                        currentClass = parts[0];
-                        currentDeobfClass = parts[1];
-                        entries.add(new MappingEntry(
-                                MappingEntry.MappingType.CLASS,
-                                currentClass, currentDeobfClass,
-                                null, null, null));
-                    }
-                } else if (currentClass != null) {
-                    // Indented member line under a class
-                    String trimmed = line.trim();
-                    String[] parts = trimmed.split("\\s+");
-                    if (parts.length == 2) {
-                        // Field: <obf_field> <deobf_field>
-                        entries.add(new MappingEntry(
-                                MappingEntry.MappingType.FIELD,
-                                parts[0], parts[1],
-                                currentDeobfClass, null, null));
-                    } else if (parts.length >= 3) {
-                        // Method: <obf_method> <deobf_method> <descriptor>
-                        entries.add(new MappingEntry(
-                                MappingEntry.MappingType.METHOD,
-                                parts[0], parts[1],
-                                currentDeobfClass, parts[2], null));
-                    }
-                }
-            }
-        } catch (IOException e) {
-            LOG.warn("Failed to parse TSRG file: {}", tsrgFile, e);
-        }
+    public void parseSRG(Path srgFile, List<MappingEntry> entries) {
+        parseSRGStatic(srgFile, entries);
+    }
+
+    public void parseTSRG(Path tsrgFile, List<MappingEntry> entries) {
+        parseTSRGStatic(tsrgFile, entries);
     }
 
     private long countByType(List<MappingEntry> entries, MappingEntry.MappingType type) {
