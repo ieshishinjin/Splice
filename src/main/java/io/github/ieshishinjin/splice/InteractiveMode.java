@@ -46,11 +46,12 @@ public class InteractiveMode {
     public void start() {
         // 选语言
         selectLanguage();
+        if (!running) { System.out.println(msg.get("wizard.exit")); scanner.close(); return; }
         System.out.println("\n  " + msg.get("wizard.hint") + "\n");
 
         while (running) {
             showMainMenu();
-            String input = prompt(msg.get("menu.prompt")).trim();
+            String input = promptNum(msg.get("menu.prompt"), 1, 7);
 
             if (input.equals(":wq")) {
                 running = false;
@@ -88,7 +89,8 @@ public class InteractiveMode {
         System.out.println("\n" + msg("lang.select"));
         System.out.println("  1. 中文");
         System.out.println("  2. English");
-        String c = prompt("1/2").trim();
+        String c = promptNum("1/2", 1, 2);
+        if (":wq".equals(c)) { running = false; return; }
 
         String lang;
         if ("2".equals(c)) {
@@ -142,7 +144,7 @@ public class InteractiveMode {
         System.out.println("\n-- " + msg("step.loader") + " --");
         System.out.println("  1. " + msg("step.loader.forge"));
         System.out.println("  2. " + msg("step.loader.fabric"));
-        String c = prompt("1/2").trim();
+        String c = promptNum("1/2", 1, 2);
         if (":wq".equals(c)) { running = false; return; }
         loaderType = "2".equals(c) ? LoaderType.FABRIC : LoaderType.FORGE;
         System.out.println("✓ " + msg("step.loader.done", loaderType));
@@ -190,7 +192,7 @@ public class InteractiveMode {
         System.out.println("\n-- " + msg("menu.mappings") + " --");
         System.out.println("  1. " + msg("mappings.load.download"));
         System.out.println("  2. " + msg("mappings.load.local"));
-        String c = prompt(msg("mappings.load.choose")).trim();
+        String c = promptNum(msg("mappings.load.choose"), 1, 2);
         if (":wq".equals(c)) { running = false; return; }
         try {
             if ("2".equals(c)) {
@@ -274,7 +276,7 @@ public class InteractiveMode {
         System.out.println("  3. " + msg("migrate.scope.bytecode"));
         System.out.println("  4. " + msg("migrate.scope.meta"));
         System.out.println("  5. " + msg("migrate.scope.report"));
-        String choice = prompt("1-5").trim();
+        String choice = promptNum("1-5", 1, 5);
         if (":wq".equals(choice)) { running = false; return; }
 
         String confirm = prompt(msg("migrate.confirm"));
@@ -310,7 +312,7 @@ public class InteractiveMode {
             System.out.println("  5. " + msg("post.back"));
             System.out.println("  6. " + msg("post.exit"));
 
-            String ch = prompt(msg("post.prompt")).trim();
+            String ch = promptNum(msg("post.prompt"), 1, 6);
             if (":wq".equals(ch) || "6".equals(ch)) {
                 running = false;
                 System.out.println(msg("wizard.exit"));
@@ -399,6 +401,23 @@ public class InteractiveMode {
     private String prompt(String text) {
         System.out.print("  > " + text + ": ");
         return scanner.nextLine();
+    }
+
+    /** 只接受数字和 :wq，其它输入忽略并重新提示 */
+    private String promptNum(String text, int min, int max) {
+        while (true) {
+            System.out.print("  > " + text + ": ");
+            String in = scanner.nextLine().trim();
+            if (in.equals(":wq")) return in;
+            if (in.isEmpty()) continue;
+            try {
+                int n = Integer.parseInt(in);
+                if (n >= min && n <= max) return in;
+            } catch (NumberFormatException e) {
+                // 非数字，继续循环
+            }
+            System.out.println("    请输入 " + min + "-" + max + " 之间的数字");
+        }
     }
 
     private String status(boolean ok, String detail) {
