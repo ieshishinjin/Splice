@@ -47,23 +47,19 @@ public class SpliceCli implements Callable<Integer> {
     // ---- Required options ----
 
     @Option(names = {"-s", "--source-version"},
-            description = "Source Minecraft version (e.g., 1.20.1)",
-            required = true)
+            description = "Source Minecraft version (e.g., 1.20.1)")
     private String sourceVersion;
 
     @Option(names = {"-t", "--target-version"},
-            description = "Target Minecraft version (e.g., 1.21)",
-            required = true)
+            description = "Target Minecraft version (e.g., 1.21)")
     private String targetVersion;
 
     @Option(names = {"-l", "--loader"},
-            description = "Mod loader type: forge or fabric",
-            required = true)
+            description = "Mod loader type: forge or fabric")
     private String loader;
 
     @Option(names = {"-i", "--input"},
-            description = "Input mod directory or .jar file",
-            required = true)
+            description = "Input mod directory or .jar file")
     private Path inputPath;
 
     // ---- Optional options ----
@@ -79,6 +75,10 @@ public class SpliceCli implements Callable<Integer> {
     @Option(names = {"-m", "--mappings-dir"},
             description = "Local mappings directory (offline: point to dir with CSV/SRG/TSRG/tiny files)")
     private Path mappingsDir;
+
+    @Option(names = {"-I", "--interactive"},
+            description = "交互式向导模式 — 逐步配置，执行后返回菜单")
+    private boolean interactive;
 
     @Option(names = {"--verbose", "-v"},
             description = "Enable verbose logging")
@@ -116,8 +116,21 @@ public class SpliceCli implements Callable<Integer> {
 
     @Override
     public Integer call() throws Exception {
-        // 1. Validate inputs
         SpliceBanner.print();
+
+        // 交互式向导模式
+        if (interactive) {
+            new InteractiveMode().start();
+            return 0;
+        }
+
+        // 非交互模式：校验必填参数
+        if (sourceVersion == null || targetVersion == null || loader == null || inputPath == null) {
+            System.err.println("错误: 非交互模式需要 -s, -t, -l, -i 四个参数");
+            System.err.println("使用 --help 查看帮助，或使用 -I 进入交互式向导");
+            return 1;
+        }
+
         LOG.info("Splice v1.0.0 - Minecraft Mod Migration Tool");
 
         validateInputs();
@@ -306,10 +319,12 @@ public class SpliceCli implements Callable<Integer> {
     static class SpliceBanner {
         static void print() {
             System.out.println();
-            System.out.println("  ╔══════════════════════════════════════╗");
-            System.out.println("  ║         S P L I C E  v1.0.0         ║");
-            System.out.println("  ║   Minecraft Mod Migration Tool      ║");
-            System.out.println("  ╚══════════════════════════════════════╝");
+            System.out.println("   ____  _      _      _");
+            System.out.println("  / ___|(_)_ __| | ___(_) ___ ___");
+            System.out.println("  \\___ \\| | '__| |/ _ \\ |/ __/ _ \\");
+            System.out.println("   ___) | | |  | |  __/ | (_|  __/");
+            System.out.println("  |____/|_|_|  |_|\\___|_|\\___\\___|  v1.0.0");
+            System.out.println("  Minecraft Mod Migration Tool");
             System.out.println();
         }
     }
