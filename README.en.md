@@ -2,6 +2,12 @@
 
 ![](https://moe-counter.ieshishinjin.workers.dev/github/ieshishinjin/Splice)
 
+<div align="center">
+
+<kbd>[English](README.en.md)</kbd> <kbd>[简体中文](README.md)</kbd>
+
+</div>
+
 Splice is a command-line tool for migrating Minecraft mods across versions. It supports both Forge (MCP) and Fabric (Yarn) loaders, automatically handling mapping differences, source/bytecode transformation, and metadata updates.
 
 ```
