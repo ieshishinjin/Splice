@@ -1,5 +1,11 @@
 # Splice — Minecraft Mod Cross-Version Migration Tool
 
+<div align="center">
+
+<kbd>[English](README.en.md)</kbd> <kbd>[简体中文](README.md)</kbd>
+
+</div>
+
 ![](https://moe-counter.ieshishinjin.workers.dev/github/ieshishinjin/Splice)
 
 <div align="center">
