@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "io.github.ieshishinjin"
-version = "1.0.0"
+version = "1.1.0"
 
 application {
     mainClass = "io.github.ieshishinjin.splice.SpliceCli"
