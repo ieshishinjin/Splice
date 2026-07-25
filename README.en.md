@@ -7,7 +7,7 @@
 </div>
 
 <div align="center">
-  <img src="https://moe-counter.ieshishinjin.workers.dev/github/ieshishinjin/Splice">
+  <img src="https://moe-counter.ieshishinjin.workers.dev/github/ieshishinjin/Splice" title="Star!">
 </div>
 
 Splice is a command-line tool for migrating Minecraft mods across versions. It supports both Forge (MCP) and Fabric (Yarn) loaders, automatically handling mapping differences, source/bytecode transformation, and metadata updates.
