@@ -51,8 +51,9 @@ public class SpliceCli implements Callable<Integer> {
     private String sourceVersion;
 
     @Option(names = {"-t", "--target-version"},
-            description = "Target Minecraft version (e.g., 1.21)")
-    private String targetVersion;
+            description = "Target version(s). 多个: -t 1.21 -t 1.20.4 或用逗号分隔",
+            split = ",")
+    private List<String> targetVersions;
 
     @Option(names = {"-l", "--loader"},
             description = "Mod loader type: forge or fabric")
@@ -122,119 +123,60 @@ public class SpliceCli implements Callable<Integer> {
     public Integer call() throws Exception {
         SpliceBanner.print();
 
-        // 清理依赖
-        if (cleanDeps) {
-            CleanDeps.run(cacheDir);
-            return 0;
-        }
+        if (cleanDeps) { CleanDeps.run(cacheDir); return 0; }
+        if (interactive) { new InteractiveMode().start(); return 0; }
 
-        // 交互式向导模式
-        if (interactive) {
-            new InteractiveMode().start();
-            return 0;
-        }
-
-        // 非交互模式：校验必填参数
-        if (sourceVersion == null || targetVersion == null || loader == null || inputPath == null) {
-            System.err.println("错误: 非交互模式需要 -s, -t, -l, -i 四个参数");
-            System.err.println("使用 --help 查看帮助，或使用 -I 进入交互式向导");
+        if (sourceVersion == null || targetVersions == null || targetVersions.isEmpty() || loader == null || inputPath == null) {
+            System.err.println("错误: 需要 -s, -t, -l, -i 四个参数");
+            System.err.println("多个目标版本: -t 1.20.4 -t 1.21 或 -t 1.20.4,1.21");
             return 1;
         }
 
         LOG.info("Splice v1.0.0 - Minecraft Mod Migration Tool");
-
         validateInputs();
 
-        // 2. Build configuration
-        Version srcVersion = new Version(sourceVersion);
-        Version tgtVersion = new Version(targetVersion);
+        Version srcVer = new Version(sourceVersion);
         LoaderType loaderType = LoaderType.fromString(loader);
+        boolean isDir = inputPath.toFile().isDirectory();
+        boolean batch = targetVersions.size() > 1;
 
-        MigrationConfig config = MigrationConfig.builder()
-                .sourceVersion(srcVersion)
-                .targetVersion(tgtVersion)
-                .loaderType(loaderType)
-                .inputPath(inputPath)
-                .outputPath(outputPath)
-                .cacheDir(cacheDir)
-                .verbose(verbose)
-                .dryRun(dryRun)
-                .threads(threads != null ? threads : Runtime.getRuntime().availableProcessors())
-                .build();
+        // 加载源映射（所有目标共用）
+        Path cache = cacheDir != null ? cacheDir : Path.of(System.getProperty("user.home"), ".splice", "mappings");
+        List<MappingEntry> sourceMappings = loadSourceMappings(srcVer, loaderType, cache);
 
-        LOG.info("Configuration: {}", config);
+        // 逐个目标执行
+        for (int i = 0; i < targetVersions.size(); i++) {
+            String tgtStr = targetVersions.get(i);
+            Version tgtVer = new Version(tgtStr);
+            LOG.info("\n===== [{}/{}] {} → {} =====", i + 1, targetVersions.size(), sourceVersion, tgtStr);
 
-        // 3. Load mappings (local or remote)
-        List<MappingEntry> sourceMappings;
-        List<MappingEntry> targetMappings;
+            List<MappingEntry> tgtMappings = loadTargetMappings(tgtVer, loaderType, cache);
+            MappingDiff diff = new MappingDiffEngine().computeDiff(srcVer, tgtVer, sourceMappings, tgtMappings, loaderType);
 
-        if (mappingsDir != null) {
-            // Offline mode: load from local directory
-            if (!Files.isDirectory(mappingsDir)) {
-                LOG.error("Mappings directory not found: {}", mappingsDir);
-                System.exit(1);
+            if (dryRun) { printDryRunSummary(diff); continue; }
+
+            // 输出路径
+            Path out;
+            if (batch && isDir) out = Path.of(inputPath + "-" + tgtStr);
+            else if (isDir) out = outputPath != null ? outputPath : Path.of(inputPath + "-migrated");
+            else {
+                String base = inputPath.getFileName().toString().replaceAll("\\.jar$", "");
+                out = Path.of(base + "-" + tgtStr + ".jar");
             }
-            MappingType mt = MappingType.fromLoader(loaderType);
-            LocalMappingService localService = new LocalMappingService(mappingsDir, srcVersion, tgtVersion, mt);
 
-            LOG.info("Loading local mappings from: {} (source={}, target={})",
-                    mappingsDir, srcVersion, tgtVersion);
+            MigrationConfig cfg = MigrationConfig.builder()
+                    .sourceVersion(srcVer).targetVersion(tgtVer).loaderType(loaderType)
+                    .inputPath(inputPath).outputPath(out).cacheDir(cache)
+                    .verbose(verbose).dryRun(dryRun)
+                    .threads(threads != null ? threads : Runtime.getRuntime().availableProcessors())
+                    .build();
 
-            sourceMappings = localService.loadFromDirectory(localService.getSourceDir());
-            targetMappings = localService.loadFromDirectory(localService.getTargetDir());
-
-            LOG.info("Loaded {} source + {} target entries from local files",
-                    sourceMappings.size(), targetMappings.size());
-        } else {
-            // Online mode: download from official sources
-            MappingDownloader downloader = new MappingDownloader();
-            MappingService mappingService = createMappingService(loaderType, downloader);
-
-            LOG.info("Loading {} mappings for {}...", mappingService.getProviderName(), sourceVersion);
-            sourceMappings = mappingService.loadMappings(srcVersion, config.getCacheDir());
-            LOG.info("Loaded {} entries for {}", sourceMappings.size(), sourceVersion);
-
-            LOG.info("Loading {} mappings for {}...", mappingService.getProviderName(), targetVersion);
-            targetMappings = mappingService.loadMappings(tgtVersion, config.getCacheDir());
-            LOG.info("Loaded {} entries for {}", targetMappings.size(), targetVersion);
+            if (isDir && batch) {
+                migrateWithGitBranch(inputPath, out, cfg, diff, tgtStr);
+            } else {
+                new TransformationEngine(cfg, diff).run();
+            }
         }
-
-        // 4. Compute diff
-        MappingDiffEngine diffEngine = new MappingDiffEngine();
-        MappingDiff diff = diffEngine.computeDiff(srcVersion, tgtVersion,
-                sourceMappings, targetMappings, loaderType);
-
-        if (!diff.hasChanges() && !diff.getRemovedEntries().isEmpty()) {
-            LOG.warn("No direct mapping changes found, but {} symbols were removed. " +
-                    "These may break compilation.", diff.getRemovedEntries().size());
-        }
-
-        // Print mapping diff summary
-        LOG.info("Class mappings: {}", diff.getClassMappings().size());
-        LOG.info("Method mappings: {}", diff.getMethodMappings().size());
-        LOG.info("Field mappings: {}", diff.getFieldMappings().size());
-        if (!diff.getAmbiguousMappings().isEmpty()) {
-            LOG.warn("Ambiguous mappings: {}", diff.getAmbiguousMappings().size());
-            diff.getAmbiguousMappings().forEach(a ->
-                    LOG.warn("  {}: {} -> {} or {}",
-                            a.type(), a.source(), a.targetA(), a.targetB()));
-        }
-
-        if (dryRun) {
-            LOG.info("[DRY-RUN] Migration preview completed. Use --dry-run to preview.");
-            printDryRunSummary(diff);
-            return 0;
-        }
-
-        // 5. Run transformation
-        TransformationEngine engine = new TransformationEngine(config, diff);
-        int filesProcessed = engine.run();
-
-        // 6. Print final message
-        LOG.info("Migration complete! Processed {} files.", filesProcessed);
-        LOG.info("Output: {}", config.getOutputPath());
-        LOG.info("Report: {}/migration-report.json", config.getOutputPath());
-
         return 0;
     }
 
@@ -243,61 +185,77 @@ public class SpliceCli implements Callable<Integer> {
     // =====================================================
 
     private void validateInputs() {
-        // Validate path exists
         if (!Files.exists(inputPath)) {
-            System.err.println("Error: Input path does not exist: " + inputPath);
-            System.exit(1);
+            System.err.println("Error: Input path does not exist: " + inputPath); System.exit(1);
         }
-
-        // Validate version format
-        try {
-            new Version(sourceVersion);
-        } catch (IllegalArgumentException e) {
-            System.err.println("Error: Invalid source version format: " + sourceVersion);
-            System.err.println("  Expected format: major.minor.patch (e.g., 1.20.1)");
-            System.exit(1);
+        try { new Version(sourceVersion); } catch (Exception e) {
+            System.err.println("Error: Invalid source version: " + sourceVersion); System.exit(1);
         }
-
-        try {
-            new Version(targetVersion);
-        } catch (IllegalArgumentException e) {
-            System.err.println("Error: Invalid target version format: " + targetVersion);
-            System.err.println("  Expected format: major.minor.patch (e.g., 1.20.1)");
-            System.exit(1);
+        for (String tv : targetVersions) {
+            try { new Version(tv); } catch (Exception e) {
+                System.err.println("Error: Invalid target version: " + tv); System.exit(1);
+            }
         }
-
-        // Validate loader type
-        try {
-            LoaderType.fromString(loader);
-        } catch (IllegalArgumentException e) {
-            System.err.println("Error: " + e.getMessage());
-            System.exit(1);
+        try { LoaderType.fromString(loader); } catch (Exception e) {
+            System.err.println("Error: " + e.getMessage()); System.exit(1);
         }
-
-        // Validate input type
-        boolean isJar = inputPath.toString().toLowerCase().endsWith(".jar");
-        boolean isDir = inputPath.toFile().isDirectory();
-        if (!isJar && !isDir) {
-            System.err.println("Error: Input must be a .jar file or a directory");
-            System.exit(1);
+        String name = inputPath.toString().toLowerCase();
+        if (!name.endsWith(".jar") && !inputPath.toFile().isDirectory()) {
+            System.err.println("Error: Input must be a .jar file or a directory"); System.exit(1);
         }
-
-        // Set default output path if not specified
-        if (outputPath == null) {
+        if (outputPath == null && targetVersions.size() == 1 && inputPath.toFile().isDirectory()) {
             outputPath = Path.of(inputPath + "-migrated");
         }
-
-        // Set default cache dir if not specified
         if (cacheDir == null) {
             cacheDir = Path.of(System.getProperty("user.home"), ".splice", "mappings");
         }
     }
 
-    private MappingService createMappingService(LoaderType loaderType, MappingDownloader downloader) {
-        return switch (loaderType) {
-            case FORGE -> new MCPMappingService(downloader);
-            case FABRIC -> new YarnMappingService(downloader);
-        };
+    private MappingService createMappingService(LoaderType lt, MappingDownloader dl) {
+        return lt == LoaderType.FORGE ? new MCPMappingService(dl) : new YarnMappingService(dl);
+    }
+
+    private List<MappingEntry> loadSourceMappings(Version ver, LoaderType lt, Path cache) {
+        MappingType mt = MappingType.fromLoader(lt);
+        if (mappingsDir != null) {
+            return new LocalMappingService(mappingsDir, ver, new Version("0.0.0"), mt).loadFromDirectory(
+                    Path.of(mappingsDir.toString(), ver.getRaw()));
+        }
+        return createMappingService(lt, new MappingDownloader()).loadMappings(ver, cache);
+    }
+
+    private List<MappingEntry> loadTargetMappings(Version ver, LoaderType lt, Path cache) {
+        MappingType mt = MappingType.fromLoader(lt);
+        if (mappingsDir != null) {
+            return new LocalMappingService(mappingsDir, new Version("0.0.0"), ver, mt).loadFromDirectory(
+                    Path.of(mappingsDir.toString(), ver.getRaw()));
+        }
+        return createMappingService(lt, new MappingDownloader()).loadMappings(ver, cache);
+    }
+
+    /** 源码目录 + 多个版本：每条目标创建一个 git 分支 */
+    private void migrateWithGitBranch(Path srcDir, Path outDir, MigrationConfig cfg, MappingDiff diff, String version) {
+        String branchName = "splice/" + cfg.getSourceVersion() + "-to-" + version;
+        try {
+            LOG.info("创建分支: {}", branchName);
+            runGit(srcDir, "stash");
+            runGit(srcDir, "checkout", "-b", branchName);
+            new TransformationEngine(cfg, diff).run();
+            runGit(srcDir, "add", ".");
+            runGit(srcDir, "commit", "-m", "Splice: auto-migrate to " + version);
+            LOG.info("✓ 分支 {} 已就绪", branchName);
+        } catch (Exception e) {
+            LOG.error("Git 操作失败: {}", e.getMessage());
+        } finally {
+            try { runGit(srcDir, "checkout", "-"); } catch (Exception ignored) {}
+            try { runGit(srcDir, "stash", "pop"); } catch (Exception ignored) {}
+        }
+    }
+
+    private void runGit(Path dir, String... args) throws Exception {
+        var cmd = new java.util.ArrayList<String>();
+        cmd.add("git"); cmd.addAll(java.util.List.of(args));
+        new ProcessBuilder(cmd).directory(dir.toFile()).inheritIO().start().waitFor();
     }
 
     private void printDryRunSummary(MappingDiff diff) {
