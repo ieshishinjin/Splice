@@ -8,12 +8,6 @@
 
 ![](https://moe-counter.ieshishinjin.workers.dev/github/ieshishinjin/Splice)
 
-<div align="center">
-
-<kbd>[English](README.en.md)</kbd> <kbd>[简体中文](README.md)</kbd>
-
-</div>
-
 Splice is a command-line tool for migrating Minecraft mods across versions. It supports both Forge (MCP) and Fabric (Yarn) loaders, automatically handling mapping differences, source/bytecode transformation, and metadata updates.
 
 ```
@@ -23,7 +17,7 @@ Splice is a command-line tool for migrating Minecraft mods across versions. It s
  ___/ / /_/ / / / /__/  __/
 /____/ .___/_/_/\___/\___/
     /_/
-  Minecraft Mod Migration Tool  v1.0.0
+  Minecraft Mod Migration Tool  v1.1.0
 ```
 
 ## Quick Start
@@ -33,19 +27,23 @@ Splice is a command-line tool for migrating Minecraft mods across versions. It s
 ./gradlew shadowJar
 
 # Interactive wizard
-java -jar build/libs/Splice-1.0.0-all.jar -I
+java -jar build/libs/Splice-1.1.0-all.jar -I
 
-# One-shot migration (Forge 1.20.1 → 1.21)
-java -jar build/libs/Splice-1.0.0-all.jar \
+# Single version migration
+java -jar build/libs/Splice-1.1.0-all.jar \
   -s 1.20.1 -t 1.21 -l forge -i ./MyMod
 
-# JAR migration (Fabric 1.19.2 → 1.20.4)
-java -jar build/libs/Splice-1.0.0-all.jar \
+# Batch multi-version migration
+java -jar build/libs/Splice-1.1.0-all.jar \
+  -s 1.16.5 -t 1.20.4 -t 1.21 -l forge -i ./MyMod.jar
+
+# JAR migration
+java -jar build/libs/Splice-1.1.0-all.jar \
   -s 1.19.2 -t 1.20.4 -l fabric -i ./MyMod.jar -o ./MyMod-migrated
 
 # Dry-run preview
-java -jar build/libs/Splice-1.0.0-all.jar \
-  -s 1.20.1 -t 1.21 -l forge -i ./src --dry-run --verbose
+java -jar build/libs/Splice-1.1.0-all.jar \
+  -s 1.20.1 -t 1.21 -l forge -i ./src --dry-run
 ```
 
 ## Features
@@ -53,27 +51,29 @@ java -jar build/libs/Splice-1.0.0-all.jar \
 | Feature | Description |
 |---------|-------------|
 | **Multi-loader** | Forge (MCP) / Fabric (Yarn) |
-| **Auto mapping** | Downloads & caches MCP/Yarn mappings from official sources |
-| **Source transformation** | AST-based (JavaParser) with regex fallback — renames classes, methods, fields |
-| **Bytecode transformation** | ASM-powered remapping for .class files |
-| **JAR processing** | Direct .jar bytecode transformation |
-| **Metadata updates** | Auto-updates `mods.toml` / `fabric.mod.json` version fields |
-| **Mixin handling** | Remaps target classes in mixin config JSON files |
-| **Access Widener / AT** | Updates Fabric `.accesswidener` and Forge `accesstransformer.cfg` |
-| **Conflict report** | JSON report with file:line for unresolved issues |
-| **Parallel processing** | Multi-threaded (default: CPU core count) |
-| **i18n** | Chinese / English interactive wizard |
-| **Dry-run** | Preview changes without writing |
-| **Safe output** | Preserves original directory structure, writes to separate output |
-| **Offline mode** | Use local mapping files via `--mappings-dir` |
-| **Gradle plugin** | Optional `splice-gradle-plugin` for build integration |
+| **Batch migration** | Multiple target versions at once `-t 1.20.4,1.21` |
+| **Source → git branches** | Auto-creates `splice/from-to` branches for each target |
+| **Multi-jar output** | Batch JAR migration produces version-suffixed files |
+| **Item model conversion** | Auto-adds `forge:item_layers` for 1.20+ inventory rendering |
+| **Auto mapping** | Multi-source download (Forge Maven / MCPConfig GitHub / MCPBot) |
+| **AST source transform** | JavaParser AST with regex fallback |
+| **Bytecode transform** | ASM remapping, temp-dir based for resource integrity |
+| **Metadata updates** | `mods.toml`, `fabric.mod.json`, mixins, AW/AT |
+| **Mixin handling** | Remaps target classes in mixin configs |
+| **Model updater** | Migrates item model format across Minecraft versions |
+| **Conflict report** | JSON + console summary with file:line |
+| **i18n** | Chinese / English wizard |
+| **Parallel processing** | Multi-threaded |
+| **Offline mode** | `--mappings-dir` for local mapping files |
+| **Cache cleanup** | `--clean-deps` removes Splice's cached dependencies only |
+| **Gradle plugin** | Optional build integration |
 
 ## Usage
 
 ### Interactive Wizard
 
 ```
-> java -jar Splice-1.0.0-all.jar -I
+> java -jar Splice-1.1.0-all.jar -I
 
 选择语言 / Choose language:
   1. 中文
@@ -90,47 +90,62 @@ java -jar build/libs/Splice-1.0.0-all.jar \
   6. ▶ Run Migration
   7. View Migration Report
 ───
-  > Choose option [1-7]:
+  > Choose option [1-7]:       ← Type :wq to exit anytime
 ```
 
 ### CLI Arguments
 
 ```
 -s, --source-version   Source version (e.g. 1.20.1)
--t, --target-version   Target version (e.g. 1.21)
--l, --loader           Loader type: forge or fabric
--i, --input            Input: source directory or .jar file
--o, --output           Output directory (default: <input>-migrated)
--c, --cache            Mapping cache directory (default: ~/.splice/mappings)
--m, --mappings-dir     Local mapping files (offline mode)
--I, --interactive      Interactive wizard mode
+-t, --target-version   Multiple: -t 1.21 -t 1.20.4 or comma-separated
+-l, --loader           forge or fabric
+-i, --input            Source directory or .jar file
+-o, --output           Output path
+-c, --cache            Cache directory (default ~/.splice/mappings)
+-m, --mappings-dir     Local mapping files (offline)
+-I, --interactive      Interactive wizard
 --verbose              Verbose logging
---dry-run              Preview only, no writes
+--dry-run              Preview only
 --threads              Parallel threads
---no-cache             Re-download mappings
+--clean-deps           Remove Splice's cached dependencies
+```
+
+### Batch Migration Examples
+
+```bash
+# Source directory → auto git branches
+java -jar Splice-1.1.0-all.jar -s 1.16.5 -t 1.20.4,1.21 -l forge -i ./MyModSrc
+# → Creates: splice/1.16.5-to-1.20.4, splice/1.16.5-to-1.21
+
+# JAR → multiple output files
+java -jar Splice-1.1.0-all.jar -s 1.16.5 -t 1.20.4,1.21 -l forge -i ./MyMod.jar
+# → Output: MyMod-1.20.4.jar, MyMod-1.21.jar
+
+# Interactive mode
+java -jar Splice-1.1.0-all.jar -I
+# → Enter target versions as: 1.20.4,1.21
 ```
 
 ## How It Works
 
 ### Forge (MCP) Mapping Chain
 ```
-Obfuscated (Notch) ──[joined.tsrg]──▶ SRG (intermediate) ──[CSV]──▶ MCP Names
+Obfuscated (Notch) ──[MCPConfig/TSRG]──▶ SRG ──[CSV]──▶ MCP Names
 ```
-Splice downloads `mcp_config` and `mcp_stable` to build the full mapping chain, then diffs MCP names between source and target versions.
-
 ### Fabric (Yarn) Mapping Chain
 ```
 Intermediary ──[.tiny]──▶ Named (Yarn)
 ```
-Splice downloads Yarn's tiny-format mappings and compares named entries directly.
+
+Splice compares source and target version mappings via intermediate names (SRG / Intermediary), then applies renames to source code, bytecode, and metadata.
 
 ### Transformation Pipeline
 
-1. **Mapping diff** — Compare source/target mappings via intermediate names (SRG / Intermediary)
-2. **Source transformation** — JavaParser AST visitor renames types, methods, fields, annotations, imports
-3. **Bytecode transformation** — ASM ClassRemapper rewrites .class constant pool references
-4. **Metadata update** — Version bump + remapped class references in mod configs, mixins, AW/AT
-5. **Conflict reporting** — Collected per-file, output as JSON + console summary
+1. **Mapping diff** via intermediate names
+2. **Source transformation** — JavaParser AST or regex
+3. **Bytecode transformation** — ASM ClassRemapper, temp-dir repacking
+4. **Metadata update** — Version, mixins, models, AW/AT, mod configs
+5. **Conflict reporting** — JSON per-file
 
 ## Project Structure
 
@@ -139,60 +154,45 @@ src/main/java/io/github/ieshishinjin/splice/
 ├── SpliceCli.java              # CLI entry (picocli)
 ├── InteractiveMode.java        # Interactive wizard
 ├── Messages.java               # i18n (zh/en)
+├── CleanDeps.java              # Cache cleanup
 ├── model/                      # Data models
-│   ├── Version.java            # MC version
-│   ├── MappingEntry.java       # Mapping entry
-│   ├── MappingDiff.java        # Version diff
-│   ├── MigrationConfig.java    # Migration config
-│   └── Conflict.java           # Conflict report
 ├── mapping/                    # Mapping services
-│   ├── MappingService.java     # Interface
-│   ├── MappingDownloader.java  # Download/cache
-│   ├── MCPMappingService.java  # MCP parser
-│   ├── YarnMappingService.java # Yarn parser
-│   ├── MappingDiffEngine.java  # Diff engine
-│   └── local/
-│       └── LocalMappingService.java # Offline files
+│   ├── MappingDownloader.java  # Multi-source download
+│   ├── MCPMappingService.java
+│   ├── YarnMappingService.java
+│   ├── MappingDiffEngine.java
+│   └── local/LocalMappingService.java
 ├── transformer/                # Transformation
 │   ├── SourceTransformer.java  # Regex fallback
 │   ├── ASTSourceTransformer.java # JavaParser AST
-│   ├── BytecodeTransformer.java # ASM remapper
-│   └── TransformationEngine.java # Orchestrator
-├── processor/
-│   └── FileProcessor.java      # File I/O
-├── updater/
-│   ├── MetadataUpdater.java    # Interface
-│   ├── ForgeMetadataUpdater.java # mods.toml
-│   ├── FabricMetadataUpdater.java # fabric.mod.json
-│   ├── MixinConfigUpdater.java # Mixin configs
-│   ├── AccessWidenerUpdater.java # Fabric AW
-│   └── AccessTransformerUpdater.java # Forge AT
+│   ├── BytecodeTransformer.java # ASM + temp-dir repack
+│   └── TransformationEngine.java
+├── updater/                    # Metadata updaters
+│   ├── ForgeMetadataUpdater.java
+│   ├── FabricMetadataUpdater.java
+│   ├── MixinConfigUpdater.java
+│   ├── ModelUpdater.java       # Item model conversion
+│   ├── AccessWidenerUpdater.java
+│   └── AccessTransformerUpdater.java
 └── reporter/
-    └── ConflictReporter.java   # Report output
+    └── ConflictReporter.java
 
-splice-gradle-plugin/           # Gradle plugin module
-├── build.gradle.kts
-└── src/.../gradle/
-    ├── SplicePlugin.java
-    ├── SpliceExtension.java
-    └── SpliceMigrationTask.java
+splice-gradle-plugin/
 ```
 
 ## Output
 
-After migration:
-- **Migrated files** — Output directory mirrors input structure
-- **migration-report.json** — Detailed conflict report
-- **~/.splice/logs/** — Full operation log
+- **Migrated files** — Mirrors input structure
+- **migration-report.json** — Conflict details
+- **~/.splice/logs/** — Operation log
+- **Git branches** — `splice/*` for batch source migration
 
 ## Gradle Plugin
 
 ```kotlin
-// build.gradle.kts
 plugins {
-    id("io.github.ieshishinjin.splice") version "1.0.0"
+    id("io.github.ieshishinjin.splice") version "1.1.0"
 }
-
 splice {
     sourceVersion = "1.20.1"
     targetVersion = "1.21"
@@ -200,7 +200,6 @@ splice {
     input = file("src/main/java")
 }
 ```
-
 ```bash
 ./gradlew spliceMigrate
 ./gradlew spliceDryRun
@@ -216,3 +215,4 @@ splice {
 - **HTTP**: OkHttp
 - **JSON**: Gson
 - **Logging**: SLF4J + Logback
+- **CI**: GitHub Actions
