@@ -25,7 +25,7 @@ public class InteractiveMode {
     private Messages msg;
 
     private Version sourceVersion;
-    private Version targetVersion;
+    private List<String> targetVersions;
     private LoaderType loaderType;
     private Path inputPath;
     private Path outputPath;
@@ -110,7 +110,7 @@ public class InteractiveMode {
         System.out.println("  " + msg("wizard.title") + "    (:wq " + msg("wizard.exit") + ")");
         System.out.println("─".repeat(50));
         System.out.println("  1. " + pad(20, msg("menu.version")) + " " + status(sourceVersion != null,
-                fmt(sourceVersion) + " " + msg("status.arrow") + " " + fmt(targetVersion)));
+                fmt(sourceVersion) + " " + msg("status.arrow") + " " + fmtTgt()));
         System.out.println("  2. " + pad(20, msg("menu.loader")) + " " + status(loaderType != null, fmt(loaderType)));
         System.out.println("  3. " + pad(20, msg("menu.input")) + " " + status(inputPath != null, fmt(inputPath)));
         System.out.println("  4. " + pad(20, msg("menu.output")) + " " + status(outputPath != null, fmt(outputPath)));
@@ -128,12 +128,13 @@ public class InteractiveMode {
         System.out.println("\n-- " + msg("step.version") + " --");
         String src = prompt(msg("step.version.src"));
         if (":wq".equals(src)) { running = false; return; }
-        String tgt = prompt(msg("step.version.tgt"));
+        String tgt = prompt("目标版本，多个用逗号分隔 (如 1.20.4,1.21)");
         if (":wq".equals(tgt)) { running = false; return; }
         try {
             sourceVersion = new Version(src);
-            targetVersion = new Version(tgt);
-            System.out.println("✓ " + msg("step.version.done", sourceVersion.toString(), targetVersion.toString()));
+            targetVersions = java.util.Arrays.stream(tgt.split(","))
+                    .map(String::trim).filter(s -> !s.isEmpty()).toList();
+            System.out.println("✓ " + sourceVersion + " → " + String.join(", ", targetVersions));
             sourceMappings = null; targetMappings = null; lastDiff = null;
         } catch (IllegalArgumentException e) {
             System.err.println(msg("error.version", e.getMessage()));
@@ -181,7 +182,7 @@ public class InteractiveMode {
     // ==================== 映射加载 ====================
 
     private void loadMappings() {
-        if (sourceVersion == null || targetVersion == null) {
+        if (sourceVersion == null || targetVersions == null || targetVersions.isEmpty()) {
             System.out.println(msg("error.config", msg("menu.version")));
             return;
         }
@@ -209,16 +210,9 @@ public class InteractiveMode {
         MappingDownloader dl = new MappingDownloader();
         MappingService svc = loaderType == LoaderType.FORGE
                 ? new MCPMappingService(dl) : new YarnMappingService(dl);
-
         System.out.println("  " + msg("mappings.source", sourceVersion));
         sourceMappings = svc.loadMappings(sourceVersion, cacheDir);
         System.out.println("  " + msg("mappings.done", sourceMappings.size()));
-
-        System.out.println("  " + msg("mappings.target", targetVersion));
-        targetMappings = svc.loadMappings(targetVersion, cacheDir);
-        System.out.println("  " + msg("mappings.done", targetMappings.size()));
-
-        computeDiff();
     }
 
     private void loadLocal() {
@@ -226,78 +220,110 @@ public class InteractiveMode {
         if (":wq".equals(dir)) { running = false; return; }
         mappingsDir = Path.of(dir);
         if (!Files.isDirectory(mappingsDir)) {
-            System.out.println(msg("mapping.dir.notfound"));
-            return;
+            System.out.println(msg("mapping.dir.notfound")); return;
         }
         MappingType mt = MappingType.fromLoader(loaderType);
-        LocalMappingService local = new LocalMappingService(mappingsDir, sourceVersion, targetVersion, mt);
-        sourceMappings = local.loadFromDirectory(local.getSourceDir());
-        targetMappings = local.loadFromDirectory(local.getTargetDir());
-        System.out.println("  " + msg("mappings.local.done", sourceMappings.size(), targetMappings.size()));
-        computeDiff();
+        sourceMappings = new LocalMappingService(mappingsDir, sourceVersion,
+                new Version("0.0.0"), mt)
+                .loadFromDirectory(Path.of(mappingsDir.toString(), sourceVersion.getRaw()));
+        System.out.println("  " + msg("mappings.done", sourceMappings.size()));
     }
 
-    private void computeDiff() {
-        if (sourceMappings == null || targetMappings == null) return;
-        System.out.println("  " + msg("mappings.computing"));
-        MappingDiffEngine engine = new MappingDiffEngine();
-        lastDiff = engine.computeDiff(sourceVersion, targetVersion, sourceMappings, targetMappings, loaderType);
-
-        System.out.println("  ✓ " + msg("mappings.class") + ": " + lastDiff.getClassMappings().size());
-        System.out.println("  ✓ " + msg("mappings.method") + ": " + lastDiff.getMethodMappings().size());
-        System.out.println("  ✓ " + msg("mappings.field") + ": " + lastDiff.getFieldMappings().size());
-        if (!lastDiff.getAmbiguousMappings().isEmpty()) {
-            System.out.println("  ⚠ " + msg("mappings.ambiguous", lastDiff.getAmbiguousMappings().size()));
+    private void downloadTarget(Version ver) {
+        try {
+            MappingDownloader dl = new MappingDownloader();
+            MappingService svc = loaderType == LoaderType.FORGE
+                    ? new MCPMappingService(dl) : new YarnMappingService(dl);
+            System.out.println("  " + msg("mappings.target", ver));
+            targetMappings = svc.loadMappings(ver, cacheDir);
+            System.out.println("  " + msg("mappings.done", targetMappings.size()));
+        } catch (Exception e) {
+            System.err.println("  ✗ 加载 " + ver + " 映射失败: " + e.getMessage());
         }
     }
 
-    // ==================== 执行迁移 ====================
+    // ==================== 执行迁移（支持多版本） ====================
 
     private void runMigration() {
-        if (lastDiff == null || !lastDiff.hasChanges()) {
-            System.out.println(msg("mappings.empty"));
-            return;
+        if (inputPath == null) { System.out.println(msg("error.input")); return; }
+        if (targetVersions == null || targetVersions.isEmpty()) {
+            System.out.println(msg("mappings.empty")); return;
         }
-        if (inputPath == null) {
-            System.out.println(msg("error.input"));
-            return;
-        }
+
+        boolean isDir = inputPath.toFile().isDirectory();
+        boolean batch = targetVersions.size() > 1;
 
         System.out.println("\n-- " + msg("migrate.preview") + " --");
-        System.out.println("  " + sourceVersion + " → " + targetVersion);
-        System.out.println("  " + lastDiff.getTotalChanges() + " " + msg("status.changes"));
+        System.out.println("  " + sourceVersion + " → " + String.join(", ", targetVersions));
         System.out.println("  " + msg("step.input.done", inputPath));
-        System.out.println("  " + msg("step.output.done", outputPath));
-        System.out.println();
-
-        System.out.println("  " + msg("migrate.scope"));
-        System.out.println("  1. " + msg("migrate.scope.all"));
-        System.out.println("  2. " + msg("migrate.scope.source"));
-        System.out.println("  3. " + msg("migrate.scope.bytecode"));
-        System.out.println("  4. " + msg("migrate.scope.meta"));
-        System.out.println("  5. " + msg("migrate.scope.report"));
-        String choice = promptNum("1-5", 1, 5);
-        if (":wq".equals(choice)) { running = false; return; }
+        System.out.println("  " + (batch ? "(批量 " + targetVersions.size() + " 个版本)" : ""));
+        if (isDir && batch) System.out.println("  源码模式：每个版本建一个 git 分支");
 
         String confirm = prompt(msg("migrate.confirm"));
-        if (!confirm.equalsIgnoreCase("y")) {
-            System.out.println(msg("migrate.cancelled"));
-            return;
-        }
+        if (!confirm.equalsIgnoreCase("y")) { System.out.println(msg("migrate.cancelled")); return; }
 
-        try {
-            MigrationConfig config = MigrationConfig.builder()
-                    .sourceVersion(sourceVersion).targetVersion(targetVersion)
-                    .loaderType(loaderType).inputPath(inputPath).outputPath(outputPath)
+        int ok = 0, fail = 0;
+        for (String tgtStr : targetVersions) {
+            Version tgtVer;
+            try { tgtVer = new Version(tgtStr); } catch (Exception e) {
+                System.err.println("✗ 无效版本: " + tgtStr); fail++; continue;
+            }
+
+            System.out.println("\n─── " + sourceVersion + " → " + tgtStr + " ───");
+
+            // 加载目标映射 + 计算差异
+            downloadTarget(tgtVer);
+            if (targetMappings == null) { fail++; continue; }
+
+            System.out.println("  " + msg("mappings.computing"));
+            MappingDiff diff = new MappingDiffEngine().computeDiff(sourceVersion, tgtVer,
+                    sourceMappings, targetMappings, loaderType);
+
+            // 输出路径
+            Path out;
+            if (batch && isDir) out = Path.of(inputPath + "-" + tgtStr);
+            else if (isDir) out = outputPath != null ? outputPath : Path.of(inputPath + "-migrated");
+            else {
+                String base = inputPath.getFileName().toString().replaceAll("\\.jar$", "");
+                out = Path.of(base + "-" + tgtStr + ".jar");
+            }
+
+            MigrationConfig cfg = MigrationConfig.builder()
+                    .sourceVersion(sourceVersion).targetVersion(tgtVer)
+                    .loaderType(loaderType).inputPath(inputPath).outputPath(out)
                     .cacheDir(cacheDir).build();
-            TransformationEngine engine = new TransformationEngine(config, lastDiff);
-            int count = engine.run();
-            System.out.println("\n" + msg("migrate.done", count));
-            showPostMenu();
-        } catch (Exception e) {
-            System.err.println(msg("migrate.failed", e.getMessage()));
-            LOG.error("Migration failed", e);
+
+            try {
+                if (isDir && batch) {
+                    // git 分支模式
+                    String branch = "splice/" + sourceVersion + "-to-" + tgtStr;
+                    System.out.println("  创建分支: " + branch);
+                    runGit("stash"); runGit("checkout", "-b", branch);
+                    new TransformationEngine(cfg, diff).run();
+                    runGit("add", "."); runGit("commit", "-m", "Splice: auto-migrate to " + tgtStr);
+                    System.out.println("  ✓ 分支 " + branch + " 已就绪");
+                } else {
+                    new TransformationEngine(cfg, diff).run();
+                }
+                ok++;
+            } catch (Exception e) {
+                System.err.println("✗ 迁移失败: " + e.getMessage());
+                fail++;
+            } finally {
+                if (isDir && batch) {
+                    try { runGit("checkout", "-"); } catch (Exception ignored) {}
+                    try { runGit("stash", "pop"); } catch (Exception ignored) {}
+                }
+            }
         }
+        System.out.println("\n✓ 完成: " + ok + " 成功, " + fail + " 失败");
+        if (ok > 0) showPostMenu();
+    }
+
+    private void runGit(String... args) throws Exception {
+        var cmd = new java.util.ArrayList<String>();
+        cmd.add("git"); cmd.addAll(java.util.List.of(args));
+        new ProcessBuilder(cmd).directory(inputPath.toFile()).inheritIO().start().waitFor();
     }
 
     // ==================== 后续菜单 ====================
@@ -352,44 +378,13 @@ public class InteractiveMode {
     }
 
     private void viewDetails() {
-        if (lastDiff == null) { System.out.println(msg("report.empty")); return; }
         System.out.println("\n-- " + msg("detail.title") + " --");
-        if (!lastDiff.getClassMappings().isEmpty()) {
-            System.out.println("\n" + msg("detail.class"));
-            lastDiff.getClassMappings().entrySet().stream().limit(20)
-                    .forEach(e -> System.out.println("  " + e.getKey() + " → " + e.getValue()));
-        }
-        if (!lastDiff.getMethodMappings().isEmpty()) {
-            System.out.println("\n" + msg("detail.method"));
-            lastDiff.getMethodMappings().entrySet().stream().limit(20)
-                    .forEach(e -> System.out.println("  " + e.getKey() + " → " + e.getValue()));
-        }
-        if (!lastDiff.getFieldMappings().isEmpty()) {
-            System.out.println("\n" + msg("detail.field"));
-            lastDiff.getFieldMappings().entrySet().stream().limit(20)
-                    .forEach(e -> System.out.println("  " + e.getKey() + " → " + e.getValue()));
-        }
-        if (!lastDiff.getRemovedEntries().isEmpty()) {
-            System.out.println("\n" + msg("detail.removed"));
-            lastDiff.getRemovedEntries().stream().limit(10)
-                    .forEach(e -> System.out.println("  [" + e.getType() + "] " + e.getIntermediateName()));
-        }
+        System.out.println("  (迁移完成后查看 migration-report.json 获取详细信息)");
     }
 
     private void exportDiff() {
-        if (lastDiff == null) { System.out.println(msg("report.empty")); return; }
-        String path = prompt(msg("export.prompt"));
-        if (":wq".equals(path)) { running = false; return; }
-        if (path.isBlank()) path = "./splice-diff.txt";
-        try (var w = Files.newBufferedWriter(Path.of(path))) {
-            w.write("Splice Diff: " + sourceVersion + " -> " + targetVersion + "\n\n");
-            w.write("=== Classes ===\n"); lastDiff.getClassMappings().forEach((k, v) -> write(w, k + " -> " + v));
-            w.write("\n=== Methods ===\n"); lastDiff.getMethodMappings().forEach((k, v) -> write(w, k + " -> " + v));
-            w.write("\n=== Fields ===\n"); lastDiff.getFieldMappings().forEach((k, v) -> write(w, k + " -> " + v));
-            System.out.println(msg("export.done", path));
-        } catch (Exception e) {
-            System.err.println(msg("export.failed", e.getMessage()));
-        }
+        System.out.println(msg("report.empty"));
+        System.out.println("  迁移报告在输出目录下的 migration-report.json 中");
     }
 
     private void write(java.io.BufferedWriter w, String s) {
@@ -426,6 +421,11 @@ public class InteractiveMode {
 
     private String fmt(Object o) {
         return o != null ? o.toString() : "(" + msg("status.unset") + ")";
+    }
+
+    private String fmtTgt() {
+        if (targetVersions == null || targetVersions.isEmpty()) return "(" + msg("status.unset") + ")";
+        return String.join(", ", targetVersions);
     }
 
     private String msg(String key, Object... args) {
