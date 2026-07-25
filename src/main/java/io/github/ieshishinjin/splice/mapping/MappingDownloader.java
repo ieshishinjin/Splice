@@ -201,8 +201,9 @@ public class MappingDownloader {
         }
 
         if (!hasCSVFiles(configDir)) {
-            LOG.warn("Could not download MCP named mappings for {}. " +
-                    "Will use SRG-only mappings (class-level only).", versionStr);
+            LOG.warn("MCP 命名映射 (CSV) 在 {} 已不再提供（Forge 从 1.16 起停用了）。", versionStr);
+            LOG.warn("将使用 SRG 中间名进行迁移，字节码正确但类名可能显示为 C_1234_ 格式。");
+            LOG.warn("如果需要可读的 MCP 名，请自行提供 CSV 文件并通过 --mappings-dir 指定。");
         }
     }
 
