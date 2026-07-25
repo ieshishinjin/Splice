@@ -143,6 +143,8 @@ public class TransformationEngine {
                 return transformGenericMetadata(file, out, new AccessWidenerUpdater());
             } else if (isAccessTransformerFile(file)) {
                 return transformGenericMetadata(file, out, new AccessTransformerUpdater());
+            } else if (isItemModelFile(file)) {
+                return transformGenericMetadata(file, out, new ModelUpdater());
             } else if (isMetadataFile(file)) {
                 return transformMetadataFile(file, out);
             } else {
@@ -220,7 +222,14 @@ public class TransformationEngine {
     private boolean isProcessableFile(Path f) {
         String n = f.toString().toLowerCase();
         return n.endsWith(".java") || n.endsWith(".class") || isMetadataFile(f)
-                || isMixinConfigFile(f) || isAccessWidenerFile(f) || isAccessTransformerFile(f);
+                || isMixinConfigFile(f) || isAccessWidenerFile(f) || isAccessTransformerFile(f)
+                || isItemModelFile(f);
+    }
+
+    /** 物品模型文件检测：assets/xxx/models/item/*.json */
+    private boolean isItemModelFile(Path f) {
+        String path = f.toString().replace('\\', '/');
+        return path.contains("/models/item/") && path.endsWith(".json");
     }
 
     private boolean isMetadataFile(Path f) {
