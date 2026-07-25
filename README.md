@@ -6,8 +6,9 @@
 
 </div>
 
-![](https://moe-counter.ieshishinjin.workers.dev/github/ieshishinjin/Splice)
-
+<div align="center">
+  <img src="https://moe-counter.ieshishinjin.workers.dev/github/ieshishinjin/Splice">
+</div>
 
 Splice 是一个 Minecraft Mod 跨版本迁移命令行工具，支持 Forge（MCP）和 Fabric（Yarn）加载器，能自动处理映射表差异、代码转换和元数据更新。
 
