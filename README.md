@@ -131,6 +131,14 @@ Intermediary ──[.tiny]──▶ Named (Yarn)
 
 Splice 通过中间名 (SRG / Intermediary) 对比源/目标版本命名差异，自动生成替换映射。
 
+### 转换流程
+
+1. **映射对比** — 通过中间名对比版本差异
+2. **源码转换** — JavaParser AST 或正则降级
+3. **字节码转换** — ASM 重映射 + 目录打包
+4. **元数据更新** — 版本号、mixins、物品模型、AW/AT
+5. **冲突报告** — 按文件输出 JSON
+
 ## 项目结构
 
 ```
@@ -177,6 +185,24 @@ splice-gradle-plugin/           # Gradle 插件
 - **migration-report.json** — 详细冲突报告
 - **~/.splice/logs/** — 操作日志
 - **Git 分支** — 源码批量模式建 `splice/*` 分支
+
+## Gradle 插件
+
+```kotlin
+plugins {
+    id("io.github.ieshishinjin.splice") version "1.1.0"
+}
+splice {
+    sourceVersion = "1.20.1"
+    targetVersion = "1.21"
+    loader = "forge"
+    input = file("src/main/java")
+}
+```
+```bash
+./gradlew spliceMigrate
+./gradlew spliceDryRun
+```
 
 ## 技术栈
 
