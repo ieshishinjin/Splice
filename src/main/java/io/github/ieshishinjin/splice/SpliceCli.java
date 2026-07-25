@@ -96,6 +96,10 @@ public class SpliceCli implements Callable<Integer> {
             description = "Skip mapping cache (re-download mappings)")
     private boolean noCache;
 
+    @Option(names = {"--clean-deps"},
+            description = "清理 Splice 用过的 Gradle 依赖缓存和映射缓存")
+    private boolean cleanDeps;
+
     @Parameters(description = "Additional arguments (reserved)")
     private List<String> positionalArgs;
 
@@ -117,6 +121,12 @@ public class SpliceCli implements Callable<Integer> {
     @Override
     public Integer call() throws Exception {
         SpliceBanner.print();
+
+        // 清理依赖
+        if (cleanDeps) {
+            CleanDeps.run(cacheDir);
+            return 0;
+        }
 
         // 交互式向导模式
         if (interactive) {
