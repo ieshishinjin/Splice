@@ -28,7 +28,9 @@ public class MappingDownloader {
     private static final Logger LOG = LoggerFactory.getLogger(MappingDownloader.class);
 
     private static final String MCP_MAVEN_URL = "https://files.minecraftforge.net/maven/de/oceanlabs/mcp";
+    private static final String MCP_MAVEN_MIRROR = "https://maven.minecraftforge.net/de/oceanlabs/mcp";
     private static final String MCP_BOT_URL = "https://mcp.onesixnine.net/versions";
+    private static final String MCP_CONFIG_GITHUB = "https://raw.githubusercontent.com/MinecraftForge/MCPConfig/master/versions/release";
     private static final String YARN_MAVEN_URL = "https://maven.fabricmc.net/net/fabricmc/yarn";
 
     private final HttpClient httpClient;
@@ -68,48 +70,70 @@ public class MappingDownloader {
         }
 
         // Try multiple possible URL patterns for MCP config
-        List<String> urlsToTry = new java.util.ArrayList<>();
+        List<String[]> urlsToTry = new java.util.ArrayList<>();
+        String baseName = "mcp_config_" + versionStr;
 
         // Pattern 1: mcp_config/{version}/mcp_config-{version}.zip (modern Forge)
-        urlsToTry.add(MCP_MAVEN_URL + "/mcp_config/" + versionStr + "/mcp_config-" + versionStr + ".zip");
+        urlsToTry.add(new String[]{MCP_MAVEN_URL + "/mcp_config/" + versionStr + "/mcp_config-" + versionStr + ".zip", baseName + ".zip"});
 
         // Pattern 2: mcp_config/mcp_config-{version}.zip (legacy)
-        urlsToTry.add(MCP_MAVEN_URL + "/mcp_config/mcp_config-" + versionStr + ".zip");
+        urlsToTry.add(new String[]{MCP_MAVEN_URL + "/mcp_config/mcp_config-" + versionStr + ".zip", baseName + ".zip"});
 
-        // Pattern 3: Try MCPBot export page
-        urlsToTry.add(MCP_BOT_URL + "/" + versionStr + "/mcp-" + versionStr + ".zip");
+        // Pattern 3: maven.minecraftforge.net mirror (for older versions like 1.16.5)
+        urlsToTry.add(new String[]{MCP_MAVEN_MIRROR + "/mcp_config/" + versionStr + "/mcp_config-" + versionStr + ".zip", baseName + ".zip"});
 
-        Path zipPath = cacheDir.resolve("mcp_config_" + versionStr + ".zip");
+        // Pattern 4: direct TSRG from MCPConfig GitHub repo
+        urlsToTry.add(new String[]{MCP_CONFIG_GITHUB + "/" + versionStr + "/joined.tsrg", baseName + ".tsrg"});
+
+        // Pattern 5: direct SRG from MCPConfig GitHub (alternative name)
+        urlsToTry.add(new String[]{MCP_CONFIG_GITHUB + "/" + versionStr + "/joined.srg", baseName + ".srg"});
+
+        // Pattern 6: Try MCPBot export page
+        urlsToTry.add(new String[]{MCP_BOT_URL + "/" + versionStr + "/mcp-" + versionStr + ".zip", baseName + ".zip"});
+
+        // Pattern 7: try the MCPBot with -slim suffix
+        urlsToTry.add(new String[]{MCP_BOT_URL + "/" + versionStr + "/mcp-" + versionStr + "-slim.zip", baseName + ".zip"});
+
         boolean downloaded = false;
+        Path downloadedPath = null;
 
-        for (String url : urlsToTry) {
+        for (String[] pair : urlsToTry) {
+            String url = pair[0];
+            String fileName = pair[1];
+            Path target = cacheDir.resolve(fileName);
             try {
                 LOG.info("Trying MCP mappings URL: {}", url);
-                downloadFile(url, zipPath);
+                downloadFile(url, target);
                 downloaded = true;
+                downloadedPath = target;
                 break;
             } catch (IOException e) {
                 LOG.debug("URL failed: {} - {}", url, e.getMessage());
-                Files.deleteIfExists(zipPath);
+                Files.deleteIfExists(target);
             }
         }
 
-        if (!downloaded) {
+        if (!downloaded || downloadedPath == null) {
             throw new IOException("Failed to download MCP mappings for " + versionStr
                     + " from any known URL. Try specifying mappings manually.");
         }
 
-        // MCP config zip contains files under "config/" directory (TSRG format)
-        // Also try extracting CSV files from different locations
-        extractZip(zipPath, configDir, entry -> {
-            String name = entry.getName();
-            // Extract .srg, .tsrg, .csv files
-            boolean isMappingFile = name.endsWith(".srg")
-                    || name.endsWith(".tsrg")
-                    || name.endsWith(".csv");
-            // Check common directories: config/, mappings/, or root
-            return isMappingFile;
-        });
+        // 处理原始 .tsrg/.srg 文件（非 zip），或解压 zip
+        String ext = downloadedPath.getFileName().toString().toLowerCase();
+        if (ext.endsWith(".tsrg") || ext.endsWith(".srg")) {
+            Files.createDirectories(configDir);
+            Files.copy(downloadedPath, configDir.resolve(downloadedPath.getFileName()));
+            LOG.info("Copied raw mapping file to: {}", configDir);
+        } else {
+            // MCP config zip contains files under "config/" directory (TSRG format)
+            extractZip(downloadedPath, configDir, entry -> {
+                String name = entry.getName();
+                boolean isMappingFile = name.endsWith(".srg")
+                        || name.endsWith(".tsrg")
+                        || name.endsWith(".csv");
+                return isMappingFile;
+            });
+        }
 
         // Rename files in config/ to root of mapping dir for easier access
         Path configSubdir = configDir.resolve("config");
