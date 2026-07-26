@@ -5,6 +5,7 @@ import io.github.ieshishinjin.splice.model.MigrationConfig;
 import io.github.ieshishinjin.splice.model.MappingDiff;
 import io.github.ieshishinjin.splice.processor.FileProcessor;
 import io.github.ieshishinjin.splice.reporter.ConflictReporter;
+import io.github.ieshishinjin.splice.scanner.HardcodeScanner;
 import io.github.ieshishinjin.splice.updater.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,6 +69,21 @@ public class TransformationEngine {
 
         if (!config.isDryRun()) {
             conflictReporter.writeReport(config.getOutputPath().resolve("migration-report.json"), allConflicts);
+            // 源码目录扫描硬编码引用
+            if (config.isDirectoryInput()) {
+                HardcodeScanner scanner = new HardcodeScanner(diff);
+                int fixed = scanner.scanAndFix(config.getOutputPath());
+                if (fixed > 0) {
+                    LOG.info("自动修复了 {} 个文件中的硬编码类名引用", fixed);
+                }
+                var hardcodeIssues = scanner.scanDirectory(config.getOutputPath());
+                if (!hardcodeIssues.isEmpty()) {
+                    LOG.warn("发现 {} 处可能的硬编码引用（字符串中的类名等），请手动确认:", hardcodeIssues.size());
+                    hardcodeIssues.stream().limit(10).forEach(c ->
+                            LOG.warn("  {}:{} — {}", c.getFile(), c.getLineNumber(), c.getMessage()));
+                    allConflicts.addAll(hardcodeIssues);
+                }
+            }
         }
         conflictReporter.printSummary(processedFiles, allConflicts, diff);
         return processedFiles;
