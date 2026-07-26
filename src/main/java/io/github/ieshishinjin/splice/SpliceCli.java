@@ -101,6 +101,10 @@ public class SpliceCli implements Callable<Integer> {
             description = "清理 Splice 用过的 Gradle 依赖缓存和映射缓存")
     private boolean cleanDeps;
 
+    @Option(names = {"--in-place"},
+            description = "批量迁移源码目录时不建 git 分支，直接原地改")
+    private boolean inPlace;
+
     @Parameters(description = "Additional arguments (reserved)")
     private List<String> positionalArgs;
 
@@ -171,7 +175,7 @@ public class SpliceCli implements Callable<Integer> {
                     .threads(threads != null ? threads : Runtime.getRuntime().availableProcessors())
                     .build();
 
-            if (isDir && batch) {
+            if (isDir && batch && !inPlace) {
                 migrateWithGitBranch(inputPath, out, cfg, diff, tgtStr);
             } else {
                 new TransformationEngine(cfg, diff).run();

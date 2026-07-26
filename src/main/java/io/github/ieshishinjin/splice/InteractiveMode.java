@@ -293,9 +293,13 @@ public class InteractiveMode {
                     .loaderType(loaderType).inputPath(inputPath).outputPath(out)
                     .cacheDir(cacheDir).build();
 
+            boolean useBranch = false;
+            if (isDir && batch) {
+                useBranch = "y".equalsIgnoreCase(prompt("git 分支模式？每个版本建一个分支 [y/N]"));
+            }
+
             try {
-                if (isDir && batch) {
-                    // git 分支模式
+                if (useBranch) {
                     String branch = "splice/" + sourceVersion + "-to-" + tgtStr;
                     System.out.println("  创建分支: " + branch);
                     runGit("stash"); runGit("checkout", "-b", branch);
