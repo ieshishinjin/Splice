@@ -155,7 +155,32 @@ public class InteractiveMode {
     private void configureInput() {
         System.out.println("\n-- " + msg("menu.input") + " --");
         System.out.println("  " + msg("step.input"));
-        String p = prompt(msg("step.input.prompt"));
+
+        // 自动检测可能的 Gradle 项目路径
+        List<Path> suggestions = detectPaths();
+        if (!suggestions.isEmpty()) {
+            System.out.println("  检测到可能的项目路径:");
+            for (int i = 0; i < suggestions.size(); i++) {
+                System.out.println("    " + (i + 1) + ". " + suggestions.get(i));
+            }
+            System.out.println("  0. 手动输入");
+            String c = prompt("选择 [0-" + suggestions.size() + "]").trim();
+            if (":wq".equals(c)) { running = false; return; }
+            try {
+                int idx = Integer.parseInt(c);
+                if (idx >= 1 && idx <= suggestions.size()) {
+                    inputPath = suggestions.get(idx - 1);
+                    System.out.println("✓ " + msg("step.input.done", inputPath));
+                    if (outputPath == null) {
+                        outputPath = Path.of(inputPath + "-migrated");
+                        System.out.println("  " + msg("step.input.auto", outputPath));
+                    }
+                    return;
+                }
+            } catch (NumberFormatException ignored) {}
+        }
+
+        String p = prompt(msg("step.input.prompt") + (suggestions.isEmpty() ? "" : " (或输入上面编号)"));
         if (":wq".equals(p)) { running = false; return; }
         Path path = Path.of(p);
         if (!Files.exists(path)) {
@@ -168,6 +193,35 @@ public class InteractiveMode {
             outputPath = Path.of(inputPath + "-migrated");
             System.out.println("  " + msg("step.input.auto", outputPath));
         }
+    }
+
+    /** 自动检测当前目录下的常见 Gradle 项目路径 */
+    private List<Path> detectPaths() {
+        List<Path> paths = new ArrayList<>();
+        Path cwd = Path.of(System.getProperty("user.dir"));
+
+        // 1. 源码目录: src/main/java
+        Path src = cwd.resolve("src/main/java");
+        if (Files.isDirectory(src)) paths.add(src);
+
+        // 2. build/libs 下的 jar（取最新的）
+        Path libs = cwd.resolve("build/libs");
+        if (Files.isDirectory(libs)) {
+            try (var files = Files.list(libs)) {
+                files.filter(f -> f.toString().endsWith(".jar"))
+                        .sorted((a, b) -> Long.compare(b.toFile().lastModified(), a.toFile().lastModified()))
+                        .findFirst().ifPresent(paths::add);
+            } catch (Exception ignored) {}
+        }
+
+        // 3. 当前目录本身（如果有 build.gradle 或 src 目录）
+        if (Files.exists(cwd.resolve("build.gradle")) || Files.exists(cwd.resolve("build.gradle.kts"))) {
+            if (paths.isEmpty() || !paths.get(0).equals(src)) {
+                paths.add(cwd);
+            }
+        }
+
+        return paths;
     }
 
     private void configureOutput() {
