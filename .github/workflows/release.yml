@@ -37,12 +37,20 @@ jobs:
           TAG="${{ github.ref_name }}"
           VERSION="${TAG#v}"
 
+          # 取出上一个版本号
+          prev=$(git tag --sort=-v:refname | grep '^v[0-9]' | grep -v "^$TAG$" | head -1)
+
           # 从 CHANGELOG.md 提取当前版本的更新内容（按 > v1.1.0 格式匹配）
           awk -v ver="> $TAG" '
             $0 == ver {found=1; next}
             /^> v/ && found {exit}
             found {print}
           ' CHANGELOG.md > CHANGELOG_SECTION.md
+
+          # 追加 compare 链接
+          repo="${{ github.repository }}"
+          echo "" >> CHANGELOG_SECTION.md
+          echo "**全量变更**: [\`$prev...$TAG\`](https://github.com/$repo/compare/$prev...$TAG)" >> CHANGELOG_SECTION.md
 
           # 生成 SHA-256 表格
           {
