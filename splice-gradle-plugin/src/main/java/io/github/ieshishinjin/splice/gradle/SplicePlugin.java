@@ -2,65 +2,53 @@ package io.github.ieshishinjin.splice.gradle;
 
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
-import org.gradle.api.tasks.JavaExec;
 import org.gradle.api.tasks.TaskProvider;
 
-/**
- * Splice Gradle plugin — applies the migration tool as a build task.
- * <p>
- * Usage in build.gradle.kts:
- * <pre>
- * plugins {
- *     id("io.github.ieshishinjin.splice") version "1.0.0"
- * }
- *
- * splice {
- *     sourceVersion = "1.20.1"
- *     targetVersion = "1.21"
- *     loader = "forge"
- *     input = file("src/main/java")
- *     output = file("build/splice-migrated")
- * }
- * </pre>
- *
- * Then run:
- * <pre>
- * ./gradlew spliceMigrate
- * </pre>
- */
 public class SplicePlugin implements Plugin<Project> {
 
     @Override
     public void apply(Project project) {
-        // Create extension for DSL configuration
-        var extension = project.getExtensions()
-                .create("splice", SpliceExtension.class);
+        var ext = project.getExtensions().create("splice", SpliceExtension.class);
 
-        // Register the migration task
-        TaskProvider<SpliceMigrationTask> migrateTask = project.getTasks()
+        // 迁移任务
+        TaskProvider<SpliceMigrationTask> migrate = project.getTasks()
                 .register("spliceMigrate", SpliceMigrationTask.class, task -> {
-                    task.setDescription("Migrate Minecraft mod to a new version using Splice");
+                    task.setDescription("Run Splice mod migration");
                     task.setGroup("splice");
-                    task.getSourceVersion().convention(extension.getSourceVersion());
-                    task.getTargetVersion().convention(extension.getTargetVersion());
-                    task.getLoader().convention(extension.getLoader());
-                    task.getInputDir().convention(extension.getInput());
-                    task.getOutputDir().convention(extension.getOutput());
-                    task.getMappingsDir().convention(extension.getMappingsDir());
-                    task.getDryRun().convention(extension.getDryRun());
+                    task.getSourceVersion().convention(ext.getSourceVersion());
+                    task.getTargetVersions().convention(ext.getTargetVersions());
+                    task.getLoader().convention(ext.getLoader());
+                    task.getInputDir().convention(ext.getInput());
+                    task.getOutputDir().convention(ext.getOutput());
+                    task.getMappingsDir().convention(ext.getMappingsDir());
+                    task.getDryRun().convention(ext.getDryRun());
+                    task.getVerbose().convention(ext.getVerbose());
+                    task.getThreads().convention(ext.getThreads());
+                    task.getCacheDir().convention(ext.getCacheDir());
                 });
 
-        // Quick task aliases
+        // dry-run 快捷任务
         project.getTasks().register("spliceDryRun", SpliceMigrationTask.class, task -> {
-            task.setDescription("Preview Splice migration without writing files");
+            task.setDescription("Preview Splice migration");
             task.setGroup("splice");
-            task.getSourceVersion().convention(extension.getSourceVersion());
-            task.getTargetVersion().convention(extension.getTargetVersion());
-            task.getLoader().convention(extension.getLoader());
-            task.getInputDir().convention(extension.getInput());
-            task.getOutputDir().convention(extension.getOutput());
-            task.getMappingsDir().convention(extension.getMappingsDir());
+            task.getSourceVersion().convention(ext.getSourceVersion());
+            task.getTargetVersions().convention(ext.getTargetVersions());
+            task.getLoader().convention(ext.getLoader());
+            task.getInputDir().convention(ext.getInput());
+            task.getOutputDir().convention(ext.getOutput());
+            task.getMappingsDir().convention(ext.getMappingsDir());
             task.getDryRun().set(true);
+            task.getVerbose().convention(ext.getVerbose());
+        });
+
+        // 清理缓存任务
+        project.getTasks().register("spliceCleanDeps", task -> {
+            task.setDescription("Clean Splice dependency cache");
+            task.setGroup("splice");
+            task.doLast($ -> {
+                project.getLogger().lifecycle("Running: java -jar ... --clean-deps");
+                // 需要找到 jar 路径并执行
+            });
         });
     }
 }

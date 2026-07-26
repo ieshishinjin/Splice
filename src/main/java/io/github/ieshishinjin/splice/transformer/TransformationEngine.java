@@ -69,6 +69,7 @@ public class TransformationEngine {
 
         if (!config.isDryRun()) {
             conflictReporter.writeReport(config.getOutputPath().resolve("migration-report.json"), allConflicts);
+            conflictReporter.writeHtmlReport(config.getOutputPath().resolve("migration-report.html"), processedFiles, allConflicts, diff);
             // 源码目录扫描硬编码引用
             if (config.isDirectoryInput()) {
                 HardcodeScanner scanner = new HardcodeScanner(diff);

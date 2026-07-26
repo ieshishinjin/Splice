@@ -93,6 +93,112 @@ public class ConflictReporter {
     }
 
     /**
+     * 生成 HTML 可视化迁移报告。
+     */
+    public void writeHtmlReport(Path htmlPath, int filesProcessed, List<Conflict> conflicts, MappingDiff diff) {
+        StringBuilder html = new StringBuilder();
+        html.append("<!DOCTYPE html><html lang=\"zh\"><head><meta charset=\"UTF-8\">");
+        html.append("<title>Splice 迁移报告 — ").append(diff.getSourceVersion()).append(" → ").append(diff.getTargetVersion()).append("</title>");
+        html.append("<style>");
+        html.append("body{font-family:-apple-system,sans-serif;max-width:960px;margin:0 auto;padding:20px;background:#0d1117;color:#c9d1d9}");
+        html.append("h1{color:#58a6ff;border-bottom:1px solid #30363d;padding-bottom:10px}");
+        html.append("h2{color:#58a6ff;margin-top:30px}");
+        html.append("h3{color:#c9d1d9}");
+        html.append(".summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:20px 0}");
+        html.append(".card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;text-align:center}");
+        html.append(".card .num{font-size:28px;font-weight:700;color:#58a6ff}");
+        html.append(".card .label{font-size:12px;color:#8b949e;margin-top:4px}");
+        html.append(".badge-error{display:inline-block;background:#da3633;color:#fff;padding:2px 8px;border-radius:12px;font-size:12px}");
+        html.append(".badge-warning{display:inline-block;background:#d29922;color:#fff;padding:2px 8px;border-radius:12px;font-size:12px}");
+        html.append(".badge-info{display:inline-block;background:#1f6feb;color:#fff;padding:2px 8px;border-radius:12px;font-size:12px}");
+        html.append(".diff-table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}");
+        html.append(".diff-table th{text-align:left;padding:8px 12px;border-bottom:2px solid #30363d;color:#8b949e}");
+        html.append(".diff-table td{padding:8px 12px;border-bottom:1px solid #21262d;font-family:monospace}");
+        html.append(".diff-table tr:hover{background:#161b22}");
+        html.append(".old{color:#f85149}");
+        html.append(".new{color:#3fb950}");
+        html.append(".arrow{color:#8b949e;padding:0 8px}");
+        html.append(".conflict-item{padding:10px 14px;border:1px solid #30363d;border-radius:6px;margin:8px 0}");
+        html.append(".conflict-item .file{color:#58a6ff;font-family:monospace;font-size:13px}");
+        html.append(".conflict-item .line{color:#8b949e;font-size:12px}");
+        html.append(".conflict-item .msg{margin:6px 0}");
+        html.append(".conflict-item .suggestion{color:#8b949e;font-size:13px;font-style:italic}");
+        html.append(".error{border-left:4px solid #da3633}");
+        html.append(".warning{border-left:4px solid #d29922}");
+        html.append(".info{border-left:4px solid #1f6feb}");
+        html.append("</style></head><body>");
+
+        html.append("<h1>🧬 Splice 迁移报告</h1>");
+        html.append("<p>").append(diff.getSourceVersion()).append(" → ").append(diff.getTargetVersion());
+        html.append(" &nbsp;|&nbsp; ").append(diff.getLoaderType()).append("</p>");
+
+        // 统计卡片
+        long errs = conflicts.stream().filter(c -> c.getSeverity() == Conflict.Severity.ERROR).count();
+        long warns = conflicts.stream().filter(c -> c.getSeverity() == Conflict.Severity.WARNING).count();
+        html.append("<div class=\"summary\">");
+        card(html, String.valueOf(filesProcessed), "文件处理");
+        card(html, String.valueOf(diff.getClassMappings().size()), "类变更");
+        card(html, String.valueOf(diff.getMethodMappings().size()), "方法变更");
+        card(html, String.valueOf(diff.getFieldMappings().size()), "字段变更");
+        card(html, String.valueOf(errs), "错误");
+        card(html, String.valueOf(warns), "警告");
+        html.append("</div>");
+
+        // 类名变更表
+        if (!diff.getClassMappings().isEmpty()) {
+            html.append("<h2>类名变更</h2><table class=\"diff-table\"><tr><th>原名</th><th></th><th>新名</th></tr>");
+            diff.getClassMappings().forEach((k, v) -> html.append("<tr><td class=\"old\">").append(esc(k))
+                    .append("</td><td class=\"arrow\">→</td><td class=\"new\">").append(esc(v)).append("</td></tr>"));
+            html.append("</table>");
+        }
+
+        // 方法名变更表
+        if (!diff.getMethodMappings().isEmpty()) {
+            html.append("<h2>方法名变更（前 50）</h2><table class=\"diff-table\"><tr><th>原名</th><th></th><th>新名</th></tr>");
+            diff.getMethodMappings().entrySet().stream().limit(50)
+                    .forEach(e -> html.append("<tr><td class=\"old\">").append(esc(e.getKey()))
+                            .append("</td><td class=\"arrow\">→</td><td class=\"new\">").append(esc(e.getValue())).append("</td></tr>"));
+            html.append("</table>");
+        }
+
+        // 冲突详情
+        if (!conflicts.isEmpty()) {
+            html.append("<h2>冲突详情</h2>");
+            for (Conflict c : conflicts) {
+                String sev = c.getSeverity().name().toLowerCase();
+                html.append("<div class=\"conflict-item ").append(sev).append("\">");
+                html.append("<span class=\"badge-").append(sev).append("\">").append(c.getSeverity()).append("</span> ");
+                html.append("<span class=\"file\">").append(c.getFile() != null ? esc(c.getFile().toString()) : "?");
+                if (c.getLineNumber() > 0) html.append(":").append(c.getLineNumber());
+                html.append("</span>");
+                html.append("<div class=\"msg\">").append(esc(c.getMessage())).append("</div>");
+                if (c.getSuggestion() != null) {
+                    html.append("<div class=\"suggestion\">💡 ").append(esc(c.getSuggestion())).append("</div>");
+                }
+                html.append("</div>");
+            }
+        }
+
+        html.append("</body></html>");
+
+        try {
+            Files.createDirectories(htmlPath.getParent());
+            Files.writeString(htmlPath, html.toString());
+            LOG.info("HTML 报告已生成: {}", htmlPath);
+        } catch (IOException e) {
+            LOG.error("生成 HTML 报告失败", e);
+        }
+    }
+
+    private void card(StringBuilder h, String num, String label) {
+        h.append("<div class=\"card\"><div class=\"num\">").append(num).append("</div><div class=\"label\">").append(label).append("</div></div>");
+    }
+
+    private String esc(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /**
      * Print a human-readable summary to the console.
      */
     public void printSummary(int filesProcessed, List<Conflict> conflicts, MappingDiff diff) {
