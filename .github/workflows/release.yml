@@ -47,10 +47,10 @@ jobs:
             found {print}
           ' CHANGELOG.md > CHANGELOG_SECTION.md
 
-          # 追加 compare 链接
+          # 追加 compare 按钮
           repo="${{ github.repository }}"
           echo "" >> CHANGELOG_SECTION.md
-          echo "**全量变更**: [\`$prev...$TAG\`](https://github.com/$repo/compare/$prev...$TAG)" >> CHANGELOG_SECTION.md
+          echo "[File Changelog](https://github.com/$repo/compare/$prev...$TAG)" >> CHANGELOG_SECTION.md
 
           # 生成 SHA-256 表格
           {
