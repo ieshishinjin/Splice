@@ -50,7 +50,7 @@ public class MigrationConfig {
 
     public boolean isJarInput() {
         String name = inputPath.toString().toLowerCase();
-        return name.endsWith(".jar");
+        return name.endsWith(".jar") || name.endsWith(".zip");
     }
 
     public boolean isDirectoryInput() {

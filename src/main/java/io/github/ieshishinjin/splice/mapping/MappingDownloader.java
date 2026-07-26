@@ -31,6 +31,8 @@ public class MappingDownloader {
     private static final String MCP_MAVEN_MIRROR = "https://maven.minecraftforge.net/de/oceanlabs/mcp";
     private static final String MCP_BOT_URL = "https://mcp.onesixnine.net/versions";
     private static final String MCP_CONFIG_GITHUB = "https://raw.githubusercontent.com/MinecraftForge/MCPConfig/master/versions/release";
+    private static final String MOJANG_META = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
+    private static final String MOJANG_MAPPINGS = "https://piston-data.mojang.com";
     private static final String YARN_MAVEN_URL = "https://maven.fabricmc.net/net/fabricmc/yarn";
 
     private final HttpClient httpClient;
@@ -93,6 +95,9 @@ public class MappingDownloader {
 
         // Pattern 7: try the MCPBot with -slim suffix
         urlsToTry.add(new String[]{MCP_BOT_URL + "/" + versionStr + "/mcp-" + versionStr + "-slim.zip", baseName + ".zip"});
+
+        // Pattern 8: try Mojang official server mappings
+        urlsToTry.add(new String[]{MOJANG_MAPPINGS + "/v1/" + versionStr + "/server.txt", baseName + ".txt"});
 
         boolean downloaded = false;
         Path downloadedPath = null;

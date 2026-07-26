@@ -204,8 +204,8 @@ public class SpliceCli implements Callable<Integer> {
             System.err.println("Error: " + e.getMessage()); System.exit(1);
         }
         String name = inputPath.toString().toLowerCase();
-        if (!name.endsWith(".jar") && !inputPath.toFile().isDirectory()) {
-            System.err.println("Error: Input must be a .jar file or a directory"); System.exit(1);
+        if (!name.endsWith(".jar") && !name.endsWith(".zip") && !inputPath.toFile().isDirectory()) {
+            System.err.println("Error: Input must be a .jar/.zip file or a directory"); System.exit(1);
         }
         if (outputPath == null && targetVersions.size() == 1 && inputPath.toFile().isDirectory()) {
             outputPath = Path.of(inputPath + "-migrated");

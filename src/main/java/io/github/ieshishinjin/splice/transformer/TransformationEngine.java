@@ -1,5 +1,6 @@
 package io.github.ieshishinjin.splice.transformer;
 
+import io.github.ieshishinjin.splice.ProgressBar;
 import io.github.ieshishinjin.splice.model.Conflict;
 import io.github.ieshishinjin.splice.model.MigrationConfig;
 import io.github.ieshishinjin.splice.model.MappingDiff;
@@ -70,6 +71,12 @@ public class TransformationEngine {
         if (!config.isDryRun()) {
             conflictReporter.writeReport(config.getOutputPath().resolve("migration-report.json"), allConflicts);
             conflictReporter.writeHtmlReport(config.getOutputPath().resolve("migration-report.html"), processedFiles, allConflicts, diff);
+
+            // git diff 统计（源码目录且在 git 仓库中时）
+            if (config.isDirectoryInput()) {
+                showGitDiff(config.getOutputPath());
+            }
+
             // 源码目录扫描硬编码引用
             if (config.isDirectoryInput()) {
                 HardcodeScanner scanner = new HardcodeScanner(diff);
@@ -126,14 +133,21 @@ public class TransformationEngine {
 
         fileProcessor.copyDirectoryStructure(inputDir, outputDir);
 
+        ProgressBar bar = new ProgressBar("迁移文件", sourceFiles.size());
+
         List<Callable<Integer>> tasks = sourceFiles.stream()
-                .<Callable<Integer>>map(file -> () -> processSingleFile(file, inputDir, outputDir))
+                .<Callable<Integer>>map(file -> () -> {
+                    int r = processSingleFile(file, inputDir, outputDir);
+                    bar.tick();
+                    return r;
+                })
                 .toList();
 
         try {
             List<Future<Integer>> futures = executor.invokeAll(tasks);
             int total = 0;
             for (Future<Integer> f : futures) total += f.get();
+            bar.done();
             return total;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -251,7 +265,9 @@ public class TransformationEngine {
 
     private boolean isMetadataFile(Path f) {
         String n = f.getFileName().toString().toLowerCase();
-        return n.equals("mods.toml") || n.equals("neoforge.mods.toml") || n.equals("fabric.mod.json") || n.equals("mcmod.info");
+        return n.equals("mods.toml") || n.equals("neoforge.mods.toml")
+                || n.equals("fabric.mod.json") || n.equals("quilt.mod.json")
+                || n.equals("mcmod.info");
     }
 
     private boolean isMixinConfigFile(Path f) {
@@ -274,9 +290,31 @@ public class TransformationEngine {
             return new ForgeMetadataUpdater(config.getTargetVersion().toString());
         } else if (n.equals("neoforge.mods.toml")) {
             return new NeoForgeMetadataUpdater(config.getTargetVersion().toString());
+        } else if (n.equals("quilt.mod.json")) {
+            return new QuiltMetadataUpdater(config.getTargetVersion().toString());
         } else if (n.equals("fabric.mod.json")) {
             return new FabricMetadataUpdater(config.getTargetVersion().toString());
         }
         return null;
+    }
+
+    /** 显示 git diff 统计（如果输出目录在 git 仓库中） */
+    private void showGitDiff(Path dir) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder("git", "rev-parse", "--git-dir");
+            pb.directory(dir.toFile());
+            Process p = pb.start();
+            if (p.waitFor() != 0) return; // 不是 git 仓库
+
+            pb = new ProcessBuilder("git", "diff", "--stat");
+            pb.directory(dir.toFile());
+            p = pb.start();
+            String out = new String(p.getInputStream().readAllBytes()).strip();
+            if (!out.isEmpty()) {
+                LOG.info("\n── 变更统计 ──\n{}", out);
+            }
+        } catch (Exception e) {
+            // git diff 非必需，静默跳过
+        }
     }
 }
