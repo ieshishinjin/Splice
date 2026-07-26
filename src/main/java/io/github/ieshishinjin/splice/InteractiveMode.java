@@ -51,7 +51,7 @@ public class InteractiveMode {
 
         while (running) {
             showMainMenu();
-            String input = promptNum(msg.get("menu.prompt"), 1, 7);
+            String input = promptNum(msg.get("menu.prompt"), 0, 7);
 
             if (input.equals(":wq")) {
                 running = false;
@@ -61,7 +61,7 @@ public class InteractiveMode {
 
             try {
                 switch (input) {
-                    case "1" -> configureVersions();
+                    case "0" -> autoMode();
                     case "2" -> configureLoader();
                     case "3" -> configureInput();
                     case "4" -> configureOutput();
@@ -113,6 +113,8 @@ public class InteractiveMode {
                 fmt(sourceVersion) + " " + msg("status.arrow") + " " + fmtTgt()));
         System.out.println("  2. " + pad(20, msg("menu.loader")) + " " + status(loaderType != null, fmt(loaderType)));
         System.out.println("  3. " + pad(20, msg("menu.input")) + " " + status(inputPath != null, fmt(inputPath)));
+        System.out.println("  0. ⚡ " + pad(16, "自动模式") + " 一键检测版本/加载器/路径并执行");
+        System.out.println("  " + "─".repeat(50));
         System.out.println("  4. " + pad(20, msg("menu.output")) + " " + status(outputPath != null, fmt(outputPath)));
         System.out.println("  5. " + pad(20, msg("menu.mappings")) + " " + status(sourceMappings != null,
                 sourceMappings != null ? sourceMappings.size() + " " + msg("status.entries") : ""));
@@ -143,11 +145,19 @@ public class InteractiveMode {
 
     private void configureLoader() {
         System.out.println("\n-- " + msg("step.loader") + " --");
-        System.out.println("  1. " + msg("step.loader.forge"));
-        System.out.println("  2. " + msg("step.loader.fabric"));
-        String c = promptNum("1/2", 1, 2);
+        System.out.println("  1. Forge");
+        System.out.println("  2. Fabric");
+        System.out.println("  3. NeoForge");
+        System.out.println("  4. Quilt");
+        String c = promptNum("1/4", 1, 4);
         if (":wq".equals(c)) { running = false; return; }
-        loaderType = "2".equals(c) ? LoaderType.FABRIC : LoaderType.FORGE;
+        loaderType = switch (c) {
+            case "1" -> LoaderType.FORGE;
+            case "2" -> LoaderType.FABRIC;
+            case "3" -> LoaderType.NEOFORGE;
+            case "4" -> LoaderType.QUILT;
+            default -> LoaderType.FORGE;
+        };
         System.out.println("✓ " + msg("step.loader.done", loaderType));
         sourceMappings = null; targetMappings = null; lastDiff = null;
     }
@@ -494,6 +504,103 @@ public class InteractiveMode {
 
     private String msg(String key, Object... args) {
         return msg.get(key, args);
+    }
+
+    // ==================== 自动模式 ====================
+
+    private void autoMode() {
+        System.out.println("\n⚡ 自动检测中...\n");
+        Path cwd = Path.of(System.getProperty("user.dir"));
+
+        // 1. 自动检测输入路径
+        List<Path> detected = detectPaths();
+        if (detected.isEmpty()) {
+            System.out.println("✗ 未检测到 Gradle 项目，请手动配置");
+            return;
+        }
+        inputPath = detected.get(0);
+        System.out.println("  ✓ 输入: " + inputPath);
+
+        // 2. 自动检测加载器
+        loaderType = detectLoader();
+        System.out.println("  ✓ 加载器: " + loaderType);
+
+        // 3. 自动检测源版本
+        sourceVersion = detectSourceVersion(cwd);
+        if (sourceVersion != null) {
+            System.out.println("  ✓ 源版本: " + sourceVersion);
+        } else {
+            System.out.println("  ? 未检测到源版本，请输入:");
+            String v = prompt(msg("step.version.src"));
+            if (":wq".equals(v)) return;
+            try { sourceVersion = new Version(v); } catch (Exception e) {
+                System.err.println("✗ 无效版本"); return;
+            }
+        }
+
+        // 4. 目标版本
+        System.out.println("  ? 目标版本 (多个用逗号分隔，如 1.21,1.20.4):");
+        String t = prompt("目标版本").trim();
+        if (":wq".equals(t)) return;
+        targetVersions = java.util.Arrays.stream(t.split(","))
+                .map(String::trim).filter(s -> !s.isEmpty()).toList();
+        if (targetVersions.isEmpty()) { System.err.println("✗ 至少需要一个目标版本"); return; }
+        System.out.println("  ✓ " + sourceVersion + " → " + String.join(", ", targetVersions));
+
+        // 5. 自动输出路径
+        outputPath = Path.of(inputPath + "-migrated");
+
+        // 6. 确认并执行
+        System.out.println("\n  配置完成，开始迁移");
+        runMigration();
+    }
+
+    /** 从项目文件检测加载器 */
+    private LoaderType detectLoader() {
+        Path cwd = Path.of(System.getProperty("user.dir"));
+        if (Files.exists(cwd.resolve("src/main/resources/quilt.mod.json"))
+                || Files.exists(cwd.resolve("quilt.mod.json"))) return LoaderType.QUILT;
+        if (Files.exists(cwd.resolve("src/main/resources/neoforge.mods.toml"))
+                || Files.exists(cwd.resolve("neoforge.mods.toml"))) return LoaderType.NEOFORGE;
+        if (Files.exists(cwd.resolve("src/main/resources/fabric.mod.json"))
+                || Files.exists(cwd.resolve("fabric.mod.json"))) return LoaderType.FABRIC;
+        if (Files.exists(cwd.resolve("src/main/resources/META-INF/mods.toml"))
+                || Files.exists(cwd.resolve("src/main/resources/mods.toml"))
+                || Files.exists(cwd.resolve("mods.toml"))) return LoaderType.FORGE;
+        // 默认根据 build.gradle 猜测
+        try {
+            String bg = Files.readString(cwd.resolve("build.gradle.kts"));
+            if (bg.contains("fabric")) return LoaderType.FABRIC;
+            if (bg.contains("quilt")) return LoaderType.QUILT;
+            if (bg.contains("neoforge")) return LoaderType.NEOFORGE;
+            if (bg.contains("forge")) return LoaderType.FORGE;
+        } catch (Exception ignored) {}
+        return LoaderType.FORGE; // 默认
+    }
+
+    /** 从 build.gradle 或 jar 文件名检测源版本 */
+    private Version detectSourceVersion(Path cwd) {
+        // 从 build.gradle 读取
+        for (String name : List.of("build.gradle.kts", "build.gradle")) {
+            try {
+                String text = Files.readString(cwd.resolve(name));
+                // 匹配 minecraft_version = "1.20.1" 或 mc_version = "1.20.1"
+                var m = java.util.regex.Pattern.compile(
+                        "(?:minecraft_version|mc_version)\\s*=\\s*\"([\\d.]+(?:-\\w+)?)\"").matcher(text);
+                if (m.find()) return new Version(m.group(1));
+            } catch (Exception ignored) {}
+        }
+        // 从 jar 文件名猜测
+        try {
+            var files = Files.list(cwd.resolve("build/libs"));
+            var jar = files.filter(f -> f.toString().endsWith(".jar"))
+                    .findFirst().orElse(null);
+            if (jar != null) {
+                var m = java.util.regex.Pattern.compile("(\\d+\\.\\d+\\.?\\d*)").matcher(jar.getFileName().toString());
+                if (m.find()) return new Version(m.group(1));
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 
     private String pad(int len, String s) {
