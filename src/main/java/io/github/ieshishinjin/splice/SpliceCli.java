@@ -146,7 +146,8 @@ public class SpliceCli implements Callable<Integer> {
 
         // 加载源映射（所有目标共用）
         Path cache = cacheDir != null ? cacheDir : Path.of(System.getProperty("user.home"), ".splice", "mappings");
-        List<MappingEntry> sourceMappings = loadSourceMappings(srcVer, loaderType, cache);
+        List<MappingEntry> sourceMappings = loadMappingsWithRetry(srcVer, loaderType, cache, "源版本 " + sourceVersion);
+        if (sourceMappings == null) return 1;
 
         // 逐个目标执行
         for (int i = 0; i < targetVersions.size(); i++) {
@@ -154,7 +155,8 @@ public class SpliceCli implements Callable<Integer> {
             Version tgtVer = new Version(tgtStr);
             LOG.info("\n===== [{}/{}] {} → {} =====", i + 1, targetVersions.size(), sourceVersion, tgtStr);
 
-            List<MappingEntry> tgtMappings = loadTargetMappings(tgtVer, loaderType, cache);
+            List<MappingEntry> tgtMappings = loadMappingsWithRetry(tgtVer, loaderType, cache, "目标版本 " + tgtStr);
+            if (tgtMappings == null) { LOG.warn("跳过 {}，无法加载映射", tgtStr); continue; }
             MappingDiff diff = new MappingDiffEngine().computeDiff(srcVer, tgtVer, sourceMappings, tgtMappings, loaderType);
 
             if (dryRun) { printDryRunSummary(diff); continue; }
@@ -219,22 +221,29 @@ public class SpliceCli implements Callable<Integer> {
         return lt == LoaderType.FORGE ? new MCPMappingService(dl) : new YarnMappingService(dl);
     }
 
-    private List<MappingEntry> loadSourceMappings(Version ver, LoaderType lt, Path cache) {
-        MappingType mt = MappingType.fromLoader(lt);
-        if (mappingsDir != null) {
-            return new LocalMappingService(mappingsDir, ver, new Version("0.0.0"), mt).loadFromDirectory(
-                    Path.of(mappingsDir.toString(), ver.getRaw()));
+    /** 加载映射，失败时询问是否重试或跳过 */
+    private List<MappingEntry> loadMappingsWithRetry(Version ver, LoaderType lt, Path cache, String label) {
+        while (true) {
+            try {
+                if (mappingsDir != null) {
+                    MappingType mt = MappingType.fromLoader(lt);
+                    return new LocalMappingService(mappingsDir, ver, new Version("0.0.0"), mt)
+                            .loadFromDirectory(Path.of(mappingsDir.toString(), ver.getRaw()));
+                }
+                return createMappingService(lt, new MappingDownloader()).loadMappings(ver, cache);
+            } catch (Exception e) {
+                LOG.error("{} 映射加载失败: {}", label, e.getMessage());
+                System.err.print("  [R]重试  [S]跳过  [Q]退出: ");
+                try {
+                    String in = new java.util.Scanner(System.in).nextLine().trim().toLowerCase();
+                    if (in.equals("s")) return null;
+                    if (in.equals("q")) System.exit(1);
+                    // 其他输入（包括回车）重试
+                } catch (Exception ignored) {
+                    return null;
+                }
+            }
         }
-        return createMappingService(lt, new MappingDownloader()).loadMappings(ver, cache);
-    }
-
-    private List<MappingEntry> loadTargetMappings(Version ver, LoaderType lt, Path cache) {
-        MappingType mt = MappingType.fromLoader(lt);
-        if (mappingsDir != null) {
-            return new LocalMappingService(mappingsDir, new Version("0.0.0"), ver, mt).loadFromDirectory(
-                    Path.of(mappingsDir.toString(), ver.getRaw()));
-        }
-        return createMappingService(lt, new MappingDownloader()).loadMappings(ver, cache);
     }
 
     /** 源码目录 + 多个版本：每条目标创建一个 git 分支 */

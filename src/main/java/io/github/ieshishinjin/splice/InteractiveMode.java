@@ -261,12 +261,7 @@ public class InteractiveMode {
     }
 
     private void downloadRemote() {
-        MappingDownloader dl = new MappingDownloader();
-        MappingService svc = loaderType == LoaderType.FORGE
-                ? new MCPMappingService(dl) : new YarnMappingService(dl);
-        System.out.println("  " + msg("mappings.source", sourceVersion));
-        sourceMappings = svc.loadMappings(sourceVersion, cacheDir);
-        System.out.println("  " + msg("mappings.done", sourceMappings.size()));
+        sourceMappings = tryLoadMappings(sourceVersion, "源版本 " + sourceVersion);
     }
 
     private void loadLocal() {
@@ -284,15 +279,26 @@ public class InteractiveMode {
     }
 
     private void downloadTarget(Version ver) {
-        try {
-            MappingDownloader dl = new MappingDownloader();
-            MappingService svc = loaderType == LoaderType.FORGE
-                    ? new MCPMappingService(dl) : new YarnMappingService(dl);
-            System.out.println("  " + msg("mappings.target", ver));
-            targetMappings = svc.loadMappings(ver, cacheDir);
-            System.out.println("  " + msg("mappings.done", targetMappings.size()));
-        } catch (Exception e) {
-            System.err.println("  ✗ 加载 " + ver + " 映射失败: " + e.getMessage());
+        targetMappings = tryLoadMappings(ver, "目标版本 " + ver);
+    }
+
+    private List<MappingEntry> tryLoadMappings(Version ver, String label) {
+        while (true) {
+            try {
+                MappingDownloader dl = new MappingDownloader();
+                MappingService svc = loaderType == LoaderType.FORGE || loaderType == LoaderType.NEOFORGE
+                        ? new MCPMappingService(dl) : new YarnMappingService(dl);
+                System.out.println("  下载 " + label + " 映射...");
+                var result = svc.loadMappings(ver, cacheDir);
+                System.out.println("  " + msg("mappings.done", result.size()));
+                return result;
+            } catch (Exception e) {
+                System.err.println("  ✗ 加载失败: " + e.getMessage());
+                System.out.print("  [R]重试  [S]跳过  [Q]退出: ");
+                String in = scanner.nextLine().trim().toLowerCase();
+                if (in.equals("s")) return null;
+                if (in.equals("q")) { running = false; return null; }
+            }
         }
     }
 
