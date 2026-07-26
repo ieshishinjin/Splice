@@ -37,10 +37,10 @@ jobs:
           TAG="${{ github.ref_name }}"
           VERSION="${TAG#v}"
 
-          # 从 CHANGELOG.md 提取当前版本的更新内容
-          awk -v ver="## $TAG" '
+          # 从 CHANGELOG.md 提取当前版本的更新内容（按 > v1.1.0 格式匹配）
+          awk -v ver="> $TAG" '
             $0 == ver {found=1; next}
-            /^## v/ && found {exit}
+            /^> v/ && found {exit}
             found {print}
           ' CHANGELOG.md > CHANGELOG_SECTION.md
 
