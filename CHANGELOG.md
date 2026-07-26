@@ -2,6 +2,7 @@
 
 
 >v1.2.0
+## 别来无恙
 - NeoForge 加载器支持，处理 neoforge.mods.toml
 - Quilt 加载器支持，处理 quilt.mod.json
 - 自动模式，一键检测项目路径/加载器/版本
