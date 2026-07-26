@@ -5,14 +5,16 @@ package io.github.ieshishinjin.splice.model;
  */
 public enum LoaderType {
     FORGE,
-    FABRIC;
+    FABRIC,
+    NEOFORGE;
 
     public static LoaderType fromString(String s) {
         return switch (s.toLowerCase()) {
             case "forge" -> FORGE;
             case "fabric" -> FABRIC;
+            case "neoforge" -> NEOFORGE;
             default -> throw new IllegalArgumentException(
-                    "Unknown loader: " + s + ". Supported: forge, fabric");
+                    "Unknown loader: " + s + ". Supported: forge, fabric, neoforge");
         };
     }
 }

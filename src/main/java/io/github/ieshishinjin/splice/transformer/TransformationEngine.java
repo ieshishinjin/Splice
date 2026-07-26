@@ -234,7 +234,7 @@ public class TransformationEngine {
 
     private boolean isMetadataFile(Path f) {
         String n = f.getFileName().toString().toLowerCase();
-        return n.equals("mods.toml") || n.equals("fabric.mod.json") || n.equals("mcmod.info");
+        return n.equals("mods.toml") || n.equals("neoforge.mods.toml") || n.equals("fabric.mod.json") || n.equals("mcmod.info");
     }
 
     private boolean isMixinConfigFile(Path f) {
@@ -255,6 +255,8 @@ public class TransformationEngine {
         String n = f.getFileName().toString().toLowerCase();
         if (n.equals("mods.toml") || n.equals("mcmod.info")) {
             return new ForgeMetadataUpdater(config.getTargetVersion().toString());
+        } else if (n.equals("neoforge.mods.toml")) {
+            return new NeoForgeMetadataUpdater(config.getTargetVersion().toString());
         } else if (n.equals("fabric.mod.json")) {
             return new FabricMetadataUpdater(config.getTargetVersion().toString());
         }

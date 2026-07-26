@@ -56,7 +56,7 @@ public class SpliceCli implements Callable<Integer> {
     private List<String> targetVersions;
 
     @Option(names = {"-l", "--loader"},
-            description = "Mod loader type: forge or fabric")
+            description = "Mod loader type: forge, fabric, neoforge")
     private String loader;
 
     @Option(names = {"-i", "--input"},

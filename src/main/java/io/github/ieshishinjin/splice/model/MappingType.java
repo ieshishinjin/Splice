@@ -19,7 +19,7 @@ public enum MappingType {
 
     public static MappingType fromLoader(LoaderType loader) {
         return switch (loader) {
-            case FORGE -> MCP;
+            case FORGE, NEOFORGE -> MCP;  // NeoForge 使用和 Forge 相同的 MCP 映射
             case FABRIC -> YARN;
         };
     }
