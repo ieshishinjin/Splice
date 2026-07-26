@@ -1,6 +1,24 @@
 # Changelog
 
 
+>v1.2.0
+- NeoForge 加载器支持，处理 neoforge.mods.toml
+- Quilt 加载器支持，处理 quilt.mod.json
+- 自动模式，一键检测项目路径/加载器/版本
+- 配置路径时自动列出 Gradle 项目目录供选择
+- 加载器菜单扩展到 Forge / Fabric / NeoForge / Quilt
+- ANSI 彩色终端输出，INFO/WARN/ERROR 颜色区分
+- 迁移进度条，实时显示处理进度
+- git diff 统计，迁移后自动输出变更行数
+- --in-place 批量迁移不建 git 分支
+- .zip 文件输入支持
+- 映射下载失败时可选重试/跳过/退出
+- 增加 Mojang 官方映射备用下载源
+- 硬编码引用自动扫描，替换字符串中的旧类名
+- HTML 可视化迁移报告，带 Diff 表格和冲突高亮
+- Release CI 自动读取 CHANGELOG + SHA-256 校验表
+- Release 只上传 fat JAR，不含 slim jar
+
 >v1.1.0
 ## 有什么新鲜事正发生？
 

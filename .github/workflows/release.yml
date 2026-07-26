@@ -26,54 +26,48 @@ jobs:
         run: ./gradlew shadowJar test --no-daemon
 
       - name: Generate checksums
+        id: checksum
         run: |
           cd build/libs
           jar=$(ls Splice-*-all.jar | head -1)
-          sha256sum "$jar" > "$jar.sha256"
-          cat "$jar.sha256"
+          sha=$(sha256sum "$jar" | awk '{print $1}')
+          echo "SHA=$sha" >> "$GITHUB_OUTPUT"
+          echo "JAR=$jar" >> "$GITHUB_OUTPUT"
 
       - name: Extract changelog
         run: |
           TAG="${{ github.ref_name }}"
-          VERSION="${TAG#v}"
-
-          # 取出上一个版本号
           prev=$(git tag --sort=-v:refname | grep '^v[0-9]' | grep -v "^$TAG$" | head -1)
-
-          # 从 CHANGELOG.md 提取当前版本的更新内容（按 > v1.1.0 格式匹配）
-          awk -v ver="> $TAG" '
-            $0 == ver {found=1; next}
-            /^> v/ && found {exit}
-            found {print}
-          ' CHANGELOG.md > CHANGELOG_SECTION.md
-
-          # 追加 compare 按钮
           repo="${{ github.repository }}"
-          echo "" >> CHANGELOG_SECTION.md
-          echo "[File Changelog](https://github.com/$repo/compare/$prev...$TAG)" >> CHANGELOG_SECTION.md
 
-          # 生成 SHA-256 表格
+          # 从 CHANGELOG.md 提取当前版本更新内容
+          awk -v ver="$TAG" '
+            index($0, ">" ver) == 1 {found=1; next}
+            /^>/ && found {exit}
+            found {print}
+          ' CHANGELOG.md > RELEASE_BODY.md
+
+          # compare 和校验
+          jar_name="${{ steps.checksum.outputs.JAR }}"
+          sha="${{ steps.checksum.outputs.SHA }}"
+          dl_url="https://github.com/$repo/releases/download/$TAG/$jar_name"
+
           {
             echo ""
             echo "---"
             echo ""
-            echo "### 文件校验"
+            echo "[File Changelog](https://github.com/$repo/compare/$prev...$TAG)"
+            echo ""
             echo "| File | SHA-256 |"
             echo "| :--- | :--- |"
-          } >> CHANGELOG_SECTION.md
-
-          for f in build/libs/*-all.jar; do
-            name=$(basename "$f")
-            sha=$(cat "build/libs/$name.sha256" | awk "{print \$1}")
-            echo "| $name | \`$sha\` |" >> CHANGELOG_SECTION.md
-          done
+            echo "| [$jar_name]($dl_url) | \`$sha\` |"
+          } >> RELEASE_BODY.md
 
       - name: Create Release
         run: |
           gh release create "${{ github.ref_name }}" \
             build/libs/Splice-*-all.jar \
-            build/libs/Splice-*-all.jar.sha256 \
             --title "${{ github.ref_name }}" \
-            --notes-file CHANGELOG_SECTION.md
+            --notes-file RELEASE_BODY.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
